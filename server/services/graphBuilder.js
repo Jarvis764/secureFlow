@@ -62,6 +62,16 @@ export function buildGraphData(dependencies) {
     dependentCount: dependencies.filter((d) => d.depth === 0).length,
   });
 
+  // Build a map from package name → node ID so parent links resolve to valid nodes.
+  // When multiple versions of the same package exist, the shallowest one wins.
+  const nameToId = new Map();
+  const sorted = [...dependencies].sort((a, b) => a.depth - b.depth);
+  for (const dep of sorted) {
+    if (!nameToId.has(dep.name)) {
+      nameToId.set(dep.name, `${dep.name}@${dep.version}`);
+    }
+  }
+
   for (const dep of dependencies) {
     const id = `${dep.name}@${dep.version}`;
     const vulns = dep.vulnerabilities || [];
@@ -78,8 +88,8 @@ export function buildGraphData(dependencies) {
       dependentCount: dependentCount.get(dep.name) || 0,
     });
 
-    // Create a link from parent → this dependency.
-    const sourceId = dep.parent ? `${dep.parent}` : rootId;
+    // Create a link from parent → this dependency using the resolved name@version ID.
+    const sourceId = dep.parent ? (nameToId.get(dep.parent) || rootId) : rootId;
     links.push({ source: sourceId, target: id });
   }
 

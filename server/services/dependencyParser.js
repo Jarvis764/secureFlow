@@ -79,7 +79,9 @@ function parseLockV2Packages(packages, devDepNames) {
     if (depth > MAX_DEPTH) continue;
 
     const version = entry.version || 'unknown';
-    const key = `${pkgPath}@${version}`;
+    // Deduplicate by name@version — the same package appearing at multiple nesting
+    // paths (hoisted vs. nested) should be included only once in the flat array.
+    const key = `${name}@${version}`;
     if (visited.has(key)) continue;
     visited.add(key);
 

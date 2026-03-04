@@ -12,6 +12,7 @@
 
 import { Router } from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 
 import { parseLockfile } from '../services/dependencyParser.js';
 import { scanVulnerabilities } from '../services/vulnScanner.js';
@@ -22,6 +23,24 @@ import Scan from '../models/Scan.js';
 import Dependency from '../models/Dependency.js';
 
 const router = Router();
+
+/** Rate limiter for read endpoints (scan history and details). */
+const readLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+/** Rate limiter for scan submission endpoints (upload / GitHub). */
+const scanLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many scan requests, please try again later.' },
+});
 
 /** Multer instance configured for in-memory storage (max 5 MB per file). */
 const upload = multer({
@@ -116,6 +135,7 @@ async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) 
  */
 router.post(
   '/upload',
+  scanLimiter,
   upload.fields([
     { name: 'packageJson', maxCount: 1 },
     { name: 'lockfile', maxCount: 1 },
@@ -149,7 +169,7 @@ router.post(
  * Request body:
  *   { "repoUrl": "https://github.com/owner/repo" }
  */
-router.post('/github', async (req, res, next) => {
+router.post('/github', scanLimiter, async (req, res, next) => {
   try {
     const { repoUrl } = req.body || {};
     if (!repoUrl) {
@@ -175,10 +195,12 @@ router.post('/github', async (req, res, next) => {
  *   page  (default 1)
  *   limit (default 10)
  */
-router.get('/', async (req, res, next) => {
+router.get('/', readLimiter, async (req, res, next) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const parsedPage = parseInt(req.query.page, 10);
+    const parsedLimit = parseInt(req.query.limit, 10);
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 10;
     const skip = (page - 1) * limit;
 
     const [scans, total] = await Promise.all([
@@ -212,7 +234,7 @@ router.get('/', async (req, res, next) => {
  * Returns full details for a single scan, including all dependency records
  * and a pre-built dependency graph.
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', readLimiter, async (req, res, next) => {
   try {
     const scan = await Scan.findById(req.params.id).lean();
     if (!scan) {

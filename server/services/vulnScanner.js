@@ -23,22 +23,28 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  */
 export function extractCvssScore(vuln) {
   try {
-    const severities = vuln.severity || [];
-    for (const s of severities) {
-      if (s.type === 'CVSS_V3' || s.type === 'CVSS_V2') {
-        // CVSS vector strings encode the score after "CVSS:x.x/"
-        const match = s.score && String(s.score).match(/(\d+(\.\d+)?)$/);
-        if (match) return parseFloat(match[1]);
-      }
-    }
-    // Try database_specific or affected[].ecosystem_specific
+    // OSV severity[].score is a CVSS *vector* string (e.g. "CVSS:3.1/AV:N/..."), not a number.
+    // Numeric scores are found in database_specific fields provided by individual databases.
+
+    // 1. Top-level database_specific (e.g. GitHub Security Advisories)
+    const topLevel = vuln.database_specific?.cvss_score ?? vuln.database_specific?.cvssScore;
+    if (typeof topLevel === 'number') return topLevel;
+
+    // 2. Per-affected entry database_specific / ecosystem_specific
     for (const affected of vuln.affected || []) {
       const score =
-        affected.ecosystem_specific?.severity ||
-        affected.database_specific?.cvss_score ||
-        affected.database_specific?.cvssScore;
+        affected.database_specific?.cvss_score ??
+        affected.database_specific?.cvssScore ??
+        affected.ecosystem_specific?.cvss_score;
       if (typeof score === 'number') return score;
     }
+
+    // 3. Infer approximate score from the CVSS severity category when present
+    const severityLabel = (vuln.database_specific?.severity || '').toUpperCase();
+    if (severityLabel === 'CRITICAL') return 9.5;
+    if (severityLabel === 'HIGH') return 8.0;
+    if (severityLabel === 'MODERATE' || severityLabel === 'MEDIUM') return 5.5;
+    if (severityLabel === 'LOW') return 2.0;
   } catch (_) {
     // Ignore parse errors
   }
@@ -106,7 +112,7 @@ async function loadFromCache(packages) {
 
   const keys = packages.map((p) => ({ packageName: p.name, packageVersion: p.version }));
   const cached = await VulnCache.find({
-    $or: keys,
+    $or: keys.map((k) => ({ packageName: k.packageName, packageVersion: k.packageVersion })),
     cachedAt: { $gte: cutoff },
   }).lean();
 

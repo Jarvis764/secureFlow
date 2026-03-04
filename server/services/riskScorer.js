@@ -51,8 +51,8 @@ export function calculateDependencyRisk(dependency) {
  * of scored dependencies.
  *
  * The overall score considers the top-10 riskiest dependencies:
- *   - Top 3  contribute 60 % of the score.
- *   - Next 7 contribute 40 % of the score.
+ *   - Top 3 contribute 60% of the score.
+ *   - Next 7 contribute 40% of the score.
  *
  * @param {Array<{
  *   vulnerabilities?: Array<{severity?: string, cvssScore?: number}>,

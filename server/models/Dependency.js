@@ -18,6 +18,7 @@ const dependencySchema = new mongoose.Schema({
     },
   ],
   riskScore: { type: Number, default: 0 },
+  modulePath: { type: String, default: '' },
 });
 
 export default mongoose.model('Dependency', dependencySchema);

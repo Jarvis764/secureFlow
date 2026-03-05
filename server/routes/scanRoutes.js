@@ -123,6 +123,127 @@ async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) 
 }
 
 // ---------------------------------------------------------------------------
+// Multi-module pipeline helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses direct/dev dependencies from a raw package.json string into stub dependency objects.
+ * Used for modules that have no lockfile — these are returned as unscanned with no versions.
+ *
+ * @param {string} packageJsonStr
+ * @param {string} modulePath
+ * @returns {Array<{ name: string, version: string, depth: number, isDevDependency: boolean, parent: null, vulnerabilities: [], riskScore: number, modulePath: string }>}
+ */
+function parsePackageJsonStubs(packageJsonStr, modulePath) {
+  let pkg;
+  try {
+    pkg = JSON.parse(packageJsonStr);
+  } catch (_) {
+    return [];
+  }
+  const stubs = [];
+  for (const [name, ver] of Object.entries(pkg.dependencies || {})) {
+    stubs.push({ name, version: String(ver), depth: 0, isDevDependency: false, parent: null, vulnerabilities: [], riskScore: 0, modulePath });
+  }
+  for (const [name, ver] of Object.entries(pkg.devDependencies || {})) {
+    stubs.push({ name, version: String(ver), depth: 0, isDevDependency: true, parent: null, vulnerabilities: [], riskScore: 0, modulePath });
+  }
+  return stubs;
+}
+
+/**
+ * Runs the scanning pipeline across multiple modules discovered from a GitHub repository.
+ *
+ * Steps per module:
+ *   - With lockfile: parseLockfile → scanVulnerabilities → calculateDependencyRisk
+ *   - Without lockfile: extract dependency stubs from package.json (unscanned)
+ *
+ * All module dependencies are merged, tagged with `modulePath`, combined risk is calculated,
+ * and a single Scan + all Dependency documents are persisted.
+ *
+ * @param {Array<{ path: string, packageJson: string, lockfile: string|null, lockfileType: string|null }>} modules
+ * @param {'github'} source
+ * @param {string} repoUrl
+ * @param {string} projectName
+ * @returns {Promise<{ scanId: string, riskScore: number, summary: Object, moduleCount: number }>}
+ */
+async function runMultiModulePipeline(modules, source, repoUrl, projectName) {
+  const allDeps = [];
+  let totalDirect = 0;
+  let totalTransitive = 0;
+  const modulePaths = [];
+
+  for (const mod of modules) {
+    const modPath = mod.path;
+    modulePaths.push(modPath);
+    console.log(`[scanRoutes] Processing module "${modPath || 'root'}" (lockfile: ${mod.lockfileType || 'none'})…`);
+
+    if (mod.lockfile) {
+      try {
+        const { directCount, transitiveCount, dependencies } = await parseLockfile(
+          mod.packageJson,
+          mod.lockfile
+        );
+        const scanned = await scanVulnerabilities(dependencies);
+        const scored = scanned.map((dep) => ({
+          ...dep,
+          riskScore: calculateDependencyRisk(dep),
+          modulePath: modPath,
+        }));
+        totalDirect += directCount;
+        totalTransitive += transitiveCount;
+        allDeps.push(...scored);
+      } catch (err) {
+        console.log(`[scanRoutes] Module "${modPath}" parse/scan error: ${err.message}. Falling back to stubs.`);
+        const stubs = parsePackageJsonStubs(mod.packageJson, modPath);
+        totalDirect += stubs.filter((d) => !d.isDevDependency).length;
+        allDeps.push(...stubs);
+      }
+    } else {
+      const stubs = parsePackageJsonStubs(mod.packageJson, modPath);
+      totalDirect += stubs.filter((d) => !d.isDevDependency).length;
+      allDeps.push(...stubs);
+      console.log(`[scanRoutes] Module "${modPath}" has no lockfile; added ${stubs.length} unscanned stubs.`);
+    }
+  }
+
+  const { overallRisk, summary } = calculateOverallRisk(allDeps);
+
+  const scan = await Scan.create({
+    projectName,
+    source,
+    repoUrl: repoUrl || undefined,
+    totalDependencies: allDeps.length,
+    directDependencies: totalDirect,
+    transitiveDependencies: totalTransitive,
+    vulnerabilityCount: summary,
+    riskScore: overallRisk,
+    status: 'complete',
+  });
+
+  if (allDeps.length > 0) {
+    const depDocs = allDeps.map((dep) => ({
+      scanId: scan._id,
+      name: dep.name,
+      version: dep.version,
+      depth: dep.depth,
+      isDevDependency: dep.isDevDependency || false,
+      parent: dep.parent || undefined,
+      vulnerabilities: dep.vulnerabilities || [],
+      riskScore: dep.riskScore || 0,
+      modulePath: dep.modulePath || '',
+    }));
+    await Dependency.insertMany(depDocs);
+  }
+
+  console.log(
+    `[scanRoutes] Multi-module scan complete: scanId=${scan._id}, modules=${modules.length}, total=${allDeps.length}, riskScore=${overallRisk}`
+  );
+
+  return { scanId: scan._id.toString(), riskScore: overallRisk, summary, moduleCount: modules.length };
+}
+
+// ---------------------------------------------------------------------------
 // POST /upload
 // ---------------------------------------------------------------------------
 
@@ -164,7 +285,7 @@ router.post(
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch package.json and package-lock.json from a GitHub repository and run a scan.
+ * Fetch package.json and lockfiles from a GitHub repository and run a scan.
  *
  * Request body:
  *   { "repoUrl": "https://github.com/owner/repo" }
@@ -176,8 +297,8 @@ router.post('/github', scanLimiter, async (req, res, next) => {
       return res.status(400).json({ error: '"repoUrl" is required.' });
     }
 
-    const { packageJson, lockfile } = await fetchFromGitHub(repoUrl);
-    const result = await runPipeline(packageJson, lockfile, 'github', repoUrl);
+    const { projectName, modules } = await fetchFromGitHub(repoUrl);
+    const result = await runMultiModulePipeline(modules, 'github', repoUrl, projectName);
     res.status(201).json(result);
   } catch (err) {
     next(err);
@@ -242,7 +363,8 @@ router.get('/:id', readLimiter, async (req, res, next) => {
     }
 
     const dependencies = await Dependency.find({ scanId: scan._id }).lean();
-    const graphData = buildGraphData(dependencies);
+    const modulePaths = [...new Set(dependencies.map((d) => d.modulePath || ''))].sort();
+    const graphData = buildGraphData(dependencies, modulePaths.length > 1 ? modulePaths : undefined);
 
     res.json({ scan, dependencies, graphData });
   } catch (err) {

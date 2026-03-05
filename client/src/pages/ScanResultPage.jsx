@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
@@ -46,6 +46,7 @@ export default function ScanResultPage() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [graphWidth,   setGraphWidth]   = useState(900);
   const [exporting,    setExporting]    = useState(false);
+  const [activeModule, setActiveModule] = useState('All');
 
   // ── Fetch scan ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -244,6 +245,28 @@ export default function ScanResultPage() {
   const vc    = scan?.vulnerabilityCount ?? {};
   const vulnSum = (vc.critical ?? 0) + (vc.high ?? 0) + (vc.medium ?? 0) + (vc.low ?? 0);
 
+  // Module paths (Phase 6A multi-module support)
+  const modules = useMemo(
+    () => ['All', ...new Set((dependencies ?? []).map(d => d.modulePath || '').filter(Boolean))],
+    [dependencies],
+  );
+
+  // Filter graph nodes/links by active module
+  const filteredNodes = useMemo(() => {
+    if (activeModule === 'All') return nodes;
+    return nodes.filter(n => n.id === 'root' || n.isModuleGroup || n.modulePath === activeModule);
+  }, [nodes, activeModule]);
+
+  const filteredLinks = useMemo(() => {
+    if (activeModule === 'All') return links;
+    const visibleIds = new Set(filteredNodes.map(n => n.id));
+    return links.filter(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      return visibleIds.has(s) && visibleIds.has(t);
+    });
+  }, [links, filteredNodes, activeModule]);
+
   // Find full dependency object for selected node (for vulnerability details)
   const selectedDependency = selectedNode
     ? (dependencies ?? []).find(
@@ -349,6 +372,16 @@ export default function ScanResultPage() {
             icon="🔴"
           />
 
+          {modules.length > 2 && (
+            <MetricCard
+              title="Modules"
+              value={modules.length - 1}
+              subtitle="Detected workspace modules"
+              variant="default"
+              icon="📁"
+            />
+          )}
+
           {/* Risk gauge */}
           <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.75rem' }}>
             <span style={{
@@ -428,7 +461,7 @@ export default function ScanResultPage() {
               <h3 style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 Dependency Graph
                 <span style={{ marginLeft: '0.6rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>
-                  {nodes.length} nodes · {links.length} edges
+                  {filteredNodes.length} / {nodes.length} nodes · {filteredLinks.length} edges
                 </span>
               </h3>
               {selectedNode && (
@@ -449,9 +482,34 @@ export default function ScanResultPage() {
               )}
             </div>
 
+            {/* Module filter chips (shown when scan has multiple modules) */}
+            {modules.length > 2 && (
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                {modules.map(mod => (
+                  <button
+                    key={mod}
+                    onClick={() => setActiveModule(mod)}
+                    style={{
+                      background:   activeModule === mod ? 'rgba(0,212,255,0.18)' : 'rgba(17,24,39,0.6)',
+                      border:       `1px solid ${activeModule === mod ? 'rgba(0,212,255,0.55)' : 'rgba(0,212,255,0.15)'}`,
+                      borderRadius: '20px',
+                      color:        activeModule === mod ? '#00d4ff' : 'var(--text-secondary)',
+                      padding:      '0.2rem 0.65rem',
+                      cursor:       'pointer',
+                      fontSize:     '0.76rem',
+                      fontFamily:   'var(--font-mono)',
+                      transition:   'all 0.2s',
+                    }}
+                  >
+                    {mod === 'All' ? '🌐 All' : `📁 ${mod}`}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Hint text */}
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-              Click a node to inspect vulnerabilities · Scroll to zoom · Drag to pan · Drag nodes to rearrange
+              Click a node to inspect vulnerabilities · Double-click to expand/collapse · Scroll to zoom
             </p>
 
             {/* Graph container (relative for the detail panel overlay) */}
@@ -467,14 +525,14 @@ export default function ScanResultPage() {
                 border:       '1px solid rgba(0, 212, 255, 0.06)',
               }}
             >
-              {nodes.length === 0 ? (
+              {filteredNodes.length === 0 ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)' }}>
                   No dependency graph data available.
                 </div>
               ) : (
                 <DependencyGraph
-                  nodes={nodes}
-                  links={links}
+                  nodes={filteredNodes}
+                  links={filteredLinks}
                   onNodeClick={handleNodeClick}
                   width={graphWidth}
                   height={560}

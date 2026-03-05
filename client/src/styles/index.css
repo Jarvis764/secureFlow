@@ -203,7 +203,71 @@ body {
   }
 }
 
-/* Animation utility classes */
+/* ── Responsive Design ───────────────────────────────────────────────────── */
+
+/* Medium screens (≤1024px) */
+@media (max-width: 1024px) {
+  .scan-result-meta-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Small screens (≤768px) */
+@media (max-width: 768px) {
+  /* Metric cards: 2 per row */
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Meta grid stacks vertically */
+  .meta-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Scan page: stack columns */
+  .scan-columns {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* History table becomes card list on small screens */
+  .history-table thead {
+    display: none;
+  }
+
+  .history-table tbody tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+  }
+
+  .history-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.3rem 0 !important;
+    border: none !important;
+    font-size: 0.82rem;
+  }
+
+  .history-table td::before {
+    content: attr(data-label);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-right: 0.5rem;
+  }
+
+  /* Navbar: reduce padding */
+  nav {
+    padding: 0 1rem !important;
+  }
+}
+
 .animate-pulse-red {
   animation: pulse-red 2s infinite;
 }

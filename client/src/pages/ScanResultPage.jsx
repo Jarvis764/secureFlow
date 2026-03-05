@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { getScanById } from '../services/api';
 import MetricCard from '../components/MetricCard';
 import RiskGauge from '../components/RiskGauge';
@@ -43,6 +45,7 @@ export default function ScanResultPage() {
   const [error,        setError]        = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
   const [graphWidth,   setGraphWidth]   = useState(900);
+  const [exporting,    setExporting]    = useState(false);
 
   // ── Fetch scan ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -76,6 +79,163 @@ export default function ScanResultPage() {
   const handleNodeClick = useCallback((node) => {
     setSelectedNode((prev) => (prev?.id === node.id ? null : node));
   }, []);
+
+  // ── PDF Export ────────────────────────────────────────────────────────────
+  const handleExportPdf = useCallback(async () => {
+    if (!scan || exporting) return;
+    setExporting(true);
+    try {
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      const margin = 18;
+      const ts = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+      const projectName = scan.projectName ?? 'Unknown';
+      const dateStr = new Date().toISOString().slice(0, 10);
+
+      // ── Page 1: Report ─────────────────────────────────────────────────
+      // Header bar
+      pdf.setFillColor(0, 240, 255);
+      pdf.rect(0, 0, pw, 14, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(10, 14, 26);
+      pdf.text('SecureFlow Security Report', margin, 9.5);
+
+      // Title
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(20);
+      pdf.setTextColor(0, 240, 255);
+      pdf.text(projectName, margin, 30);
+
+      // Meta row
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text(`Scanned: ${formatDate(scan.createdAt)}`, margin, 38);
+      pdf.text(`Source: ${scan.source === 'github' ? 'GitHub' : 'File Upload'}`, margin + 80, 38);
+
+      // Risk score block
+      const riskScore = scan.riskScore ?? 0;
+      const riskColor = riskScore >= 75 ? [239, 68, 68] : riskScore >= 50 ? [249, 115, 22] : riskScore >= 25 ? [234, 179, 8] : [34, 197, 94];
+      pdf.setFillColor(...riskColor, 25);
+      pdf.roundedRect(margin, 45, 55, 22, 3, 3, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(24);
+      pdf.setTextColor(...riskColor);
+      pdf.text(String(riskScore), margin + 8, 61);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('RISK SCORE', margin + 8, 65);
+
+      // Divider
+      pdf.setDrawColor(0, 240, 255, 30);
+      pdf.line(margin, 73, pw - margin, 73);
+
+      // Vulnerability summary table
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(226, 232, 240);
+      pdf.text('Vulnerability Summary', margin, 81);
+
+      const vc = scan.vulnerabilityCount ?? {};
+      const rows = [
+        { label: 'Critical', count: vc.critical ?? 0, color: [239,  68,  68] },
+        { label: 'High',     count: vc.high     ?? 0, color: [249, 115,  22] },
+        { label: 'Medium',   count: vc.medium   ?? 0, color: [234, 179,   8] },
+        { label: 'Low',      count: vc.low      ?? 0, color: [ 34, 197,  94] },
+      ];
+      const total = rows.reduce((s, r) => s + r.count, 0);
+
+      let y = 88;
+      rows.forEach(({ label, count, color }) => {
+        // Row bg
+        pdf.setFillColor(17, 24, 39);
+        pdf.rect(margin, y, pw - margin * 2, 9, 'F');
+        // Severity label
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(...color);
+        pdf.text(label, margin + 3, y + 6);
+        // Count
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(226, 232, 240);
+        pdf.text(String(count), pw - margin - 10, y + 6, { align: 'right' });
+        // Bar
+        const barW = pw - margin * 2 - 40;
+        pdf.setFillColor(30, 41, 59);
+        pdf.rect(margin + 30, y + 3, barW, 3, 'F');
+        if (total > 0 && count > 0) {
+          pdf.setFillColor(...color);
+          pdf.rect(margin + 30, y + 3, barW * (count / total), 3, 'F');
+        }
+        y += 11;
+      });
+
+      // Total row
+      y += 2;
+      pdf.setDrawColor(0, 240, 255, 40);
+      pdf.line(margin, y, pw - margin, y);
+      y += 6;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(226, 232, 240);
+      pdf.text('Total Vulnerabilities', margin + 3, y);
+      pdf.text(String(total), pw - margin - 10, y, { align: 'right' });
+
+      // Dependency counts
+      y += 14;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(148, 163, 184);
+      pdf.text(`Total Dependencies: ${scan.totalDependencies ?? 0}`, margin, y);
+      pdf.text(`Direct: ${scan.directDependencies ?? 0}  ·  Transitive: ${scan.transitiveDependencies ?? 0}`, margin, y + 6);
+
+      // Footer
+      pdf.setFont('helvetica', 'italic');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(`Generated by SecureFlow · ${ts}`, margin, ph - 10);
+
+      // ── Page 2: Dependency graph screenshot ───────────────────────────
+      if (graphWrapRef.current) {
+        const canvas = await html2canvas(graphWrapRef.current, {
+          backgroundColor: '#0a0e1a',
+          scale: 1.5,
+          useCORS: true,
+          logging: false,
+        });
+        const imgData = canvas.toDataURL('image/jpeg', 0.85);
+        pdf.addPage();
+
+        // Header bar
+        pdf.setFillColor(0, 240, 255);
+        pdf.rect(0, 0, pw, 14, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.setTextColor(10, 14, 26);
+        pdf.text('Dependency Graph', margin, 9.5);
+
+        // Graph image
+        const imgW = pw - margin * 2;
+        const imgH = (canvas.height / canvas.width) * imgW;
+        pdf.addImage(imgData, 'JPEG', margin, 22, imgW, Math.min(imgH, ph - 40));
+
+        // Footer
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(`Generated by SecureFlow · ${ts}`, margin, ph - 10);
+      }
+
+      pdf.save(`secureflow-report-${projectName.replace(/\s+/g, '-')}-${dateStr}.pdf`);
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setExporting(false);
+    }
+  }, [scan, exporting]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const { scan, dependencies, graphData } = data || {};
@@ -132,9 +292,27 @@ export default function ScanResultPage() {
                 Scanned {formatDate(scan?.createdAt)} · {getSourceLabel(scan?.source)}
               </p>
             </div>
-            <button className="btn-primary" onClick={() => navigate('/scan')} style={{ fontSize: '0.85rem' }}>
-              + New Scan
-            </button>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <motion.button
+                className="btn-secondary"
+                onClick={handleExportPdf}
+                disabled={exporting}
+                whileHover={{ scale: exporting ? 1 : 1.05 }}
+                whileTap={{ scale: exporting ? 1 : 0.95 }}
+                style={{ fontSize: '0.85rem', opacity: exporting ? 0.65 : 1 }}
+              >
+                {exporting ? '⏳ Generating…' : '📄 Export PDF'}
+              </motion.button>
+              <motion.button
+                className="btn-primary"
+                onClick={() => navigate('/scan')}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                style={{ fontSize: '0.85rem' }}
+              >
+                + New Scan
+              </motion.button>
+            </div>
           </div>
         </motion.div>
 

@@ -19,6 +19,9 @@ function getNodeRadius(dependentCount) {
   return Math.max(6, Math.min(25, 4 + (dependentCount || 0) * 2));
 }
 
+// Maximum characters to display in a node label before truncating
+const MAX_LABEL_LENGTH = 16;
+
 // ─── Legend items ─────────────────────────────────────────────────────────
 const LEGEND = [
   { label: 'None / Safe', color: SEVERITY_COLORS.none },
@@ -150,7 +153,7 @@ export default function DependencyGraph({
 
     // Label
     nodeSel.append('text')
-      .text((d) => (d.name.length > 16 ? d.name.slice(0, 15) + '…' : d.name))
+      .text((d) => (d.name.length > MAX_LABEL_LENGTH ? d.name.slice(0, MAX_LABEL_LENGTH - 1) + '…' : d.name))
       .attr('x',            0)
       .attr('y',            (d) => getNodeRadius(d.dependentCount) + 11)
       .attr('text-anchor',  'middle')

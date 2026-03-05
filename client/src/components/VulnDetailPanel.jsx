@@ -197,7 +197,7 @@ export default function VulnDetailPanel({ node, dependency, onClose }) {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                {vulnerabilities.map((vuln, idx) => (
+                  {vulnerabilities.map((vuln, idx) => (
                   <div key={vuln.id || idx} style={{
                     background:   'rgba(255, 59, 92, 0.05)',
                     border:       '1px solid rgba(255, 59, 92, 0.18)',
@@ -218,6 +218,7 @@ export default function VulnDetailPanel({ node, dependency, onClose }) {
                         color:      '#94a3b8',
                         wordBreak:  'break-all',
                       }}>
+                        {/* Display 1-based numbering as a user-facing fallback label */}
                         {vuln.id || `VULN-${idx + 1}`}
                       </span>
                       <SeverityBadge severity={vuln.severity} />

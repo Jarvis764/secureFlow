@@ -11,11 +11,10 @@ import LoadingSkeleton from '../components/LoadingSkeleton';
 import { formatDate } from '../utils/formatters';
 
 const PAGE_STYLE = {
-  minHeight:  'calc(100vh - 64px)',
-  marginTop:  '64px',
-  padding:    '2rem',
-  maxWidth:   '1400px',
-  margin:     '64px auto 0',
+  minHeight: 'calc(100vh - 64px)',
+  padding:   '2rem',
+  maxWidth:  '1400px',
+  margin:    '64px auto 0',
 };
 
 const containerVariants = {
@@ -26,6 +25,13 @@ const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   show:   { opacity: 1, y: 0, transition: { duration: 0.42, ease: 'easeOut' } },
 };
+
+const SOURCE_LABELS = {
+  github: '🐙 GitHub',
+};
+function getSourceLabel(source) {
+  return SOURCE_LABELS[source] ?? '📁 File Upload';
+}
 
 export default function ScanResultPage() {
   const { id }       = useParams();
@@ -123,7 +129,7 @@ export default function ScanResultPage() {
                 {scan?.projectName ?? 'Scan Results'}
               </h1>
               <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-                Scanned {formatDate(scan?.createdAt)} · {scan?.source === 'github' ? '🐙 GitHub' : '📁 File Upload'}
+                Scanned {formatDate(scan?.createdAt)} · {getSourceLabel(scan?.source)}
               </p>
             </div>
             <button className="btn-primary" onClick={() => navigate('/scan')} style={{ fontSize: '0.85rem' }}>
@@ -211,7 +217,7 @@ export default function ScanResultPage() {
               <tbody>
                 {[
                   { label: 'Project',     value: scan?.projectName ?? 'Unknown' },
-                  { label: 'Source',      value: scan?.source === 'github' ? '🐙 GitHub' : '📁 File Upload' },
+                  { label: 'Source',      value: getSourceLabel(scan?.source) },
                   { label: 'Scanned',     value: formatDate(scan?.createdAt) },
                   { label: 'Status',      value: <span style={{ color: 'var(--severity-low)', fontWeight: 600 }}>{(scan?.status ?? 'complete').toUpperCase()}</span> },
                   { label: 'Risk Score',  value: <span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{scan?.riskScore ?? 0}</span> },

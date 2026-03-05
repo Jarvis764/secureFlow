@@ -14,18 +14,18 @@ import { formatDate } from '../utils/formatters';
 
 const PAGE_STYLE = {
   minHeight: 'calc(100vh - 64px)',
-  padding:   '2rem',
-  maxWidth:  '1400px',
-  margin:    '64px auto 0',
+  padding: '2rem',
+  maxWidth: '1400px',
+  margin: '64px auto 0',
 };
 
 const containerVariants = {
   hidden: {},
-  show:   { transition: { staggerChildren: 0.08 } },
+  show: { transition: { staggerChildren: 0.08 } },
 };
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
-  show:   { opacity: 1, y: 0, transition: { duration: 0.42, ease: 'easeOut' } },
+  show: { opacity: 1, y: 0, transition: { duration: 0.42, ease: 'easeOut' } },
 };
 
 const SOURCE_LABELS = {
@@ -36,16 +36,16 @@ function getSourceLabel(source) {
 }
 
 export default function ScanResultPage() {
-  const { id }       = useParams();
-  const navigate     = useNavigate();
+  const { id } = useParams();
+  const navigate = useNavigate();
   const graphWrapRef = useRef(null);
 
-  const [data,         setData]         = useState(null);
-  const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState('');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [selectedNode, setSelectedNode] = useState(null);
-  const [graphWidth,   setGraphWidth]   = useState(900);
-  const [exporting,    setExporting]    = useState(false);
+  const [graphWidth, setGraphWidth] = useState(900);
+  const [exporting, setExporting] = useState(false);
   const [activeModule, setActiveModule] = useState('All');
 
   // ── Fetch scan ────────────────────────────────────────────────────────────
@@ -80,6 +80,13 @@ export default function ScanResultPage() {
   const handleNodeClick = useCallback((node) => {
     setSelectedNode((prev) => (prev?.id === node.id ? null : node));
   }, []);
+
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const { scan, dependencies, graphData } = data || {};
+  const nodes = graphData?.nodes ?? [];
+  const links = graphData?.links ?? [];
+  const vc = scan?.vulnerabilityCount ?? {};
+  const vulnSum = (vc.critical ?? 0) + (vc.high ?? 0) + (vc.medium ?? 0) + (vc.low ?? 0);
 
   // ── PDF Export ────────────────────────────────────────────────────────────
   const handleExportPdf = useCallback(async () => {
@@ -142,10 +149,10 @@ export default function ScanResultPage() {
 
       const vc = scan.vulnerabilityCount ?? {};
       const rows = [
-        { label: 'Critical', count: vc.critical ?? 0, color: [239,  68,  68] },
-        { label: 'High',     count: vc.high     ?? 0, color: [249, 115,  22] },
-        { label: 'Medium',   count: vc.medium   ?? 0, color: [234, 179,   8] },
-        { label: 'Low',      count: vc.low      ?? 0, color: [ 34, 197,  94] },
+        { label: 'Critical', count: vc.critical ?? 0, color: [239, 68, 68] },
+        { label: 'High', count: vc.high ?? 0, color: [249, 115, 22] },
+        { label: 'Medium', count: vc.medium ?? 0, color: [234, 179, 8] },
+        { label: 'Low', count: vc.low ?? 0, color: [34, 197, 94] },
       ];
       const total = rows.reduce((s, r) => s + r.count, 0);
 
@@ -238,12 +245,7 @@ export default function ScanResultPage() {
     }
   }, [scan, exporting]);
 
-  // ── Derived data ──────────────────────────────────────────────────────────
-  const { scan, dependencies, graphData } = data || {};
-  const nodes = graphData?.nodes ?? [];
-  const links = graphData?.links ?? [];
-  const vc    = scan?.vulnerabilityCount ?? {};
-  const vulnSum = (vc.critical ?? 0) + (vc.high ?? 0) + (vc.medium ?? 0) + (vc.low ?? 0);
+
 
   // Module paths (Phase 6A multi-module support)
   const modules = useMemo(
@@ -270,8 +272,8 @@ export default function ScanResultPage() {
   // Find full dependency object for selected node (for vulnerability details)
   const selectedDependency = selectedNode
     ? (dependencies ?? []).find(
-        (d) => `${d.name}@${d.version}` === selectedNode.id,
-      ) ?? null
+      (d) => `${d.name}@${d.version}` === selectedNode.id,
+    ) ?? null
     : null;
 
   // ── Loading ────────────────────────────────────────────────────────────────
@@ -343,11 +345,11 @@ export default function ScanResultPage() {
         <motion.div
           variants={itemVariants}
           style={{
-            display:             'grid',
+            display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-            gap:                 '1rem',
-            marginBottom:        '1.5rem',
-            alignItems:          'start',
+            gap: '1rem',
+            marginBottom: '1.5rem',
+            alignItems: 'start',
           }}
         >
           <MetricCard
@@ -385,12 +387,12 @@ export default function ScanResultPage() {
           {/* Risk gauge */}
           <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0.75rem' }}>
             <span style={{
-              fontSize:      '0.72rem',
-              fontWeight:    600,
-              color:         'var(--text-secondary)',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
               textTransform: 'uppercase',
               letterSpacing: '0.08em',
-              marginBottom:  '0.1rem',
+              marginBottom: '0.1rem',
             }}>
               Risk Score
             </span>
@@ -402,10 +404,10 @@ export default function ScanResultPage() {
         <motion.div
           variants={itemVariants}
           style={{
-            display:             'grid',
+            display: 'grid',
             gridTemplateColumns: '1fr 1.6fr',
-            gap:                 '1rem',
-            marginBottom:        '1.5rem',
+            gap: '1rem',
+            marginBottom: '1.5rem',
           }}
         >
           <div className="glass-card">
@@ -414,9 +416,9 @@ export default function ScanResultPage() {
             </h3>
             <SeverityDonut data={{
               critical: vc.critical ?? 0,
-              high:     vc.high     ?? 0,
-              medium:   vc.medium   ?? 0,
-              low:      vc.low      ?? 0,
+              high: vc.high ?? 0,
+              medium: vc.medium ?? 0,
+              low: vc.low ?? 0,
             }} />
           </div>
 
@@ -427,11 +429,11 @@ export default function ScanResultPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
               <tbody>
                 {[
-                  { label: 'Project',     value: scan?.projectName ?? 'Unknown' },
-                  { label: 'Source',      value: getSourceLabel(scan?.source) },
-                  { label: 'Scanned',     value: formatDate(scan?.createdAt) },
-                  { label: 'Status',      value: <span style={{ color: 'var(--severity-low)', fontWeight: 600 }}>{(scan?.status ?? 'complete').toUpperCase()}</span> },
-                  { label: 'Risk Score',  value: <span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{scan?.riskScore ?? 0}</span> },
+                  { label: 'Project', value: scan?.projectName ?? 'Unknown' },
+                  { label: 'Source', value: getSourceLabel(scan?.source) },
+                  { label: 'Scanned', value: formatDate(scan?.createdAt) },
+                  { label: 'Status', value: <span style={{ color: 'var(--severity-low)', fontWeight: 600 }}>{(scan?.status ?? 'complete').toUpperCase()}</span> },
+                  { label: 'Risk Score', value: <span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{scan?.riskScore ?? 0}</span> },
                 ].map(({ label, value }) => (
                   <tr key={label} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '0.5rem 0', color: 'var(--text-secondary)', width: '38%' }}>{label}</td>
@@ -468,13 +470,13 @@ export default function ScanResultPage() {
                 <button
                   onClick={() => setSelectedNode(null)}
                   style={{
-                    background:   'none',
-                    border:       '1px solid rgba(0, 212, 255, 0.25)',
+                    background: 'none',
+                    border: '1px solid rgba(0, 212, 255, 0.25)',
                     borderRadius: '6px',
-                    color:        'var(--text-secondary)',
-                    padding:      '0.25rem 0.65rem',
-                    cursor:       'pointer',
-                    fontSize:     '0.78rem',
+                    color: 'var(--text-secondary)',
+                    padding: '0.25rem 0.65rem',
+                    cursor: 'pointer',
+                    fontSize: '0.78rem',
                   }}
                 >
                   Clear selection
@@ -490,15 +492,15 @@ export default function ScanResultPage() {
                     key={mod}
                     onClick={() => setActiveModule(mod)}
                     style={{
-                      background:   activeModule === mod ? 'rgba(0,212,255,0.18)' : 'rgba(17,24,39,0.6)',
-                      border:       `1px solid ${activeModule === mod ? 'rgba(0,212,255,0.55)' : 'rgba(0,212,255,0.15)'}`,
+                      background: activeModule === mod ? 'rgba(0,212,255,0.18)' : 'rgba(17,24,39,0.6)',
+                      border: `1px solid ${activeModule === mod ? 'rgba(0,212,255,0.55)' : 'rgba(0,212,255,0.15)'}`,
                       borderRadius: '20px',
-                      color:        activeModule === mod ? '#00d4ff' : 'var(--text-secondary)',
-                      padding:      '0.2rem 0.65rem',
-                      cursor:       'pointer',
-                      fontSize:     '0.76rem',
-                      fontFamily:   'var(--font-mono)',
-                      transition:   'all 0.2s',
+                      color: activeModule === mod ? '#00d4ff' : 'var(--text-secondary)',
+                      padding: '0.2rem 0.65rem',
+                      cursor: 'pointer',
+                      fontSize: '0.76rem',
+                      fontFamily: 'var(--font-mono)',
+                      transition: 'all 0.2s',
                     }}
                   >
                     {mod === 'All' ? '🌐 All' : `📁 ${mod}`}
@@ -516,13 +518,13 @@ export default function ScanResultPage() {
             <div
               ref={graphWrapRef}
               style={{
-                position:     'relative',
-                width:        '100%',
-                height:       '560px',
+                position: 'relative',
+                width: '100%',
+                height: '560px',
                 borderRadius: '8px',
-                overflow:     'hidden',
-                background:   'rgba(0,0,0,0.2)',
-                border:       '1px solid rgba(0, 212, 255, 0.06)',
+                overflow: 'hidden',
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px solid rgba(0, 212, 255, 0.06)',
               }}
             >
               {filteredNodes.length === 0 ? (

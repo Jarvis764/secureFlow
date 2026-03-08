@@ -1,0 +1,61 @@
+name: 'SecureFlow Dependency Scan'
+description: >
+  Scans your project's dependencies for known vulnerabilities using the
+  SecureFlow API and posts results as GitHub Actions annotations.
+  Fails the workflow if the risk score exceeds the configured threshold.
+
+author: 'SecureFlow'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+# ── Inputs ─────────────────────────────────────────────────────────────────
+inputs:
+  api-url:
+    description: >
+      Base URL of your SecureFlow server, e.g. https://secureflow.example.com.
+      Defaults to http://localhost:5000 for local testing.
+    required: false
+    default: 'http://localhost:5000'
+
+  api-key:
+    description: >
+      SecureFlow API key with scan permissions (X-API-Key).
+      Store this as a GitHub Actions secret, e.g. ${{ secrets.SECUREFLOW_API_KEY }}.
+    required: true
+
+  package-json-path:
+    description: >
+      Path to the package.json file relative to the repository root.
+    required: false
+    default: 'package.json'
+
+  lockfile-path:
+    description: >
+      Path to the lockfile (package-lock.json) relative to the repository root.
+    required: false
+    default: 'package-lock.json'
+
+  threshold:
+    description: >
+      Risk score (0–100) above which the workflow step will fail.
+      Set to 100 to never fail.
+    required: false
+    default: '70'
+
+# ── Outputs ────────────────────────────────────────────────────────────────
+outputs:
+  risk-score:
+    description: 'Overall risk score (0–100) returned by SecureFlow.'
+  critical-count:
+    description: 'Number of critical-severity vulnerabilities found.'
+  high-count:
+    description: 'Number of high-severity vulnerabilities found.'
+  scan-url:
+    description: 'URL of the full scan report in SecureFlow.'
+
+# ── Runtime ────────────────────────────────────────────────────────────────
+runs:
+  using: 'node20'
+  main: 'index.js'

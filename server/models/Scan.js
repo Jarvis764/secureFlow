@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const scanSchema = new mongoose.Schema(
   {
     projectName: { type: String, required: true },
-    source: { type: String, enum: ['upload', 'github'], required: true },
+    source: { type: String, enum: ['upload', 'github', 'api'], required: true },
     repoUrl: { type: String },
     totalDependencies: { type: Number, default: 0 },
     directDependencies: { type: Number, default: 0 },

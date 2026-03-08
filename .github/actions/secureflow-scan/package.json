@@ -1,0 +1,17 @@
+{
+  "name": "secureflow-scan-action",
+  "version": "1.0.0",
+  "description": "SecureFlow GitHub Action — scans Node.js dependencies for vulnerabilities",
+  "main": "index.js",
+  "scripts": {
+    "build": "ncc build index.js -o dist --source-map --no-source-map-register"
+  },
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/github": "^6.0.0",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.3"
+  }
+}

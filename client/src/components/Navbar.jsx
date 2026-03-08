@@ -1,14 +1,23 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const navLinks = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/scan', label: 'New Scan' },
+  { to: '/',        label: 'Dashboard' },
+  { to: '/org',     label: 'Organisation' },
+  { to: '/scan',    label: 'New Scan' },
   { to: '/history', label: 'History' },
 ];
 
 export default function Navbar() {
   const { pathname } = useLocation();
+  const navigate     = useNavigate();
+  const { user, org, logout } = useAuth();
+
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <nav style={{
@@ -58,7 +67,7 @@ export default function Navbar() {
         </span>
       </Link>
 
-      {/* Navigation links */}
+      {/* Navigation links + user menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
         {navLinks.map(({ to, label }) => {
           const isActive = pathname === to || (to !== '/' && pathname.startsWith(to));
@@ -101,6 +110,49 @@ export default function Navbar() {
             </Link>
           );
         })}
+
+        {/* User info + logout (only when logged in) */}
+        {user && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: '0.75rem', paddingLeft: '0.75rem', borderLeft: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+                {user.email}
+              </span>
+              <span style={{
+                fontSize: '0.68rem',
+                color: 'var(--accent-cyan)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                lineHeight: 1.2,
+              }}>
+                {user.role}{org ? ` · ${org.name}` : ''}
+              </span>
+            </div>
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '0.35rem 0.8rem',
+                background: 'transparent',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                transition: 'border-color 0.2s, color 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--severity-critical)';
+                e.currentTarget.style.color = 'var(--severity-critical)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </nav>
   );

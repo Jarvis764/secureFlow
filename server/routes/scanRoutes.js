@@ -19,6 +19,8 @@ import { scanVulnerabilities } from '../services/vulnScanner.js';
 import { calculateDependencyRisk, calculateOverallRisk } from '../services/riskScorer.js';
 import { fetchFromGitHub } from '../services/githubFetcher.js';
 import { buildGraphData } from '../services/graphBuilder.js';
+import { generateSPDX, generateCycloneDX } from '../services/sbomGenerator.js';
+import { analyzeLicenses, generateComplianceReport } from '../services/licenseAnalyzer.js';
 import Scan from '../models/Scan.js';
 import Dependency from '../models/Dependency.js';
 
@@ -85,8 +87,11 @@ async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) 
     riskScore: calculateDependencyRisk(dep),
   }));
 
+  // 3b. License analysis
+  const licensedDeps = await analyzeLicenses(scoredDeps);
+
   // 4. Overall project risk
-  const { overallRisk, summary } = calculateOverallRisk(scoredDeps);
+  const { overallRisk, summary } = calculateOverallRisk(licensedDeps);
 
   // 5. Persist to MongoDB
   const scan = await Scan.create({
@@ -101,8 +106,8 @@ async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) 
     status: 'complete',
   });
 
-  if (scoredDeps.length > 0) {
-    const depDocs = scoredDeps.map((dep) => ({
+  if (licensedDeps.length > 0) {
+    const depDocs = licensedDeps.map((dep) => ({
       scanId: scan._id,
       name: dep.name,
       version: dep.version,
@@ -111,6 +116,8 @@ async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) 
       parent: dep.parent || undefined,
       vulnerabilities: dep.vulnerabilities || [],
       riskScore: dep.riskScore || 0,
+      license: dep.license || '',
+      licenseCategory: dep.licenseCategory || '',
     }));
     await Dependency.insertMany(depDocs);
   }
@@ -209,11 +216,14 @@ async function runMultiModulePipeline(modules, source, repoUrl, projectName) {
 
   const { overallRisk, summary } = calculateOverallRisk(allDeps);
 
+  // License analysis for all collected deps
+  const licensedAllDeps = await analyzeLicenses(allDeps);
+
   const scan = await Scan.create({
     projectName,
     source,
     repoUrl: repoUrl || undefined,
-    totalDependencies: allDeps.length,
+    totalDependencies: licensedAllDeps.length,
     directDependencies: totalDirect,
     transitiveDependencies: totalTransitive,
     vulnerabilityCount: summary,
@@ -221,8 +231,8 @@ async function runMultiModulePipeline(modules, source, repoUrl, projectName) {
     status: 'complete',
   });
 
-  if (allDeps.length > 0) {
-    const depDocs = allDeps.map((dep) => ({
+  if (licensedAllDeps.length > 0) {
+    const depDocs = licensedAllDeps.map((dep) => ({
       scanId: scan._id,
       name: dep.name,
       version: dep.version,
@@ -232,12 +242,14 @@ async function runMultiModulePipeline(modules, source, repoUrl, projectName) {
       vulnerabilities: dep.vulnerabilities || [],
       riskScore: dep.riskScore || 0,
       modulePath: dep.modulePath || '',
+      license: dep.license || '',
+      licenseCategory: dep.licenseCategory || '',
     }));
     await Dependency.insertMany(depDocs);
   }
 
   console.log(
-    `[scanRoutes] Multi-module scan complete: scanId=${scan._id}, modules=${modules.length}, total=${allDeps.length}, riskScore=${overallRisk}`
+    `[scanRoutes] Multi-module scan complete: scanId=${scan._id}, modules=${modules.length}, total=${licensedAllDeps.length}, riskScore=${overallRisk}`
   );
 
   return { scanId: scan._id.toString(), riskScore: overallRisk, summary, moduleCount: modules.length };
@@ -366,9 +378,96 @@ router.get('/:id', readLimiter, async (req, res, next) => {
     const modulePaths = [...new Set(dependencies.map((d) => d.modulePath || ''))].sort();
     const graphData = buildGraphData(dependencies, modulePaths.length > 1 ? modulePaths : undefined);
 
-    res.json({ scan, dependencies, graphData });
+    const licenseReport = generateComplianceReport(dependencies, 'MIT');
+
+    res.json({ scan, dependencies, graphData, licenseReport });
   } catch (err) {
     // Handle invalid ObjectId format gracefully
+    if (err.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid scan ID format.' });
+    }
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /:id/sbom/spdx — SPDX 2.3 JSON SBOM download
+// ---------------------------------------------------------------------------
+
+router.get('/:id/sbom/spdx', readLimiter, async (req, res, next) => {
+  try {
+    const scan = await Scan.findById(req.params.id).lean();
+    if (!scan) {
+      return res.status(404).json({ error: 'Scan not found.' });
+    }
+
+    const dependencies = await Dependency.find({ scanId: scan._id }).lean();
+    const sbom = generateSPDX(scan, dependencies);
+
+    const filename = `${(scan.projectName ?? 'sbom').replace(/\s+/g, '-')}.spdx.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(sbom);
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid scan ID format.' });
+    }
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /:id/sbom/cyclonedx — CycloneDX 1.5 JSON or XML SBOM download
+// ---------------------------------------------------------------------------
+
+router.get('/:id/sbom/cyclonedx', readLimiter, async (req, res, next) => {
+  try {
+    const scan = await Scan.findById(req.params.id).lean();
+    if (!scan) {
+      return res.status(404).json({ error: 'Scan not found.' });
+    }
+
+    const dependencies = await Dependency.find({ scanId: scan._id }).lean();
+    const format = req.query.format === 'xml' ? 'xml' : 'json';
+    const sbom = generateCycloneDX(scan, dependencies, format);
+    const baseName = (scan.projectName ?? 'sbom').replace(/\s+/g, '-');
+
+    if (format === 'xml') {
+      const filename = `${baseName}.cdx.xml`;
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', 'application/xml');
+      res.send(sbom);
+    } else {
+      const filename = `${baseName}.cdx.json`;
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Type', 'application/json');
+      res.json(sbom);
+    }
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid scan ID format.' });
+    }
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /:id/licenses — License compliance report
+// ---------------------------------------------------------------------------
+
+router.get('/:id/licenses', readLimiter, async (req, res, next) => {
+  try {
+    const scan = await Scan.findById(req.params.id).lean();
+    if (!scan) {
+      return res.status(404).json({ error: 'Scan not found.' });
+    }
+
+    const dependencies = await Dependency.find({ scanId: scan._id }).lean();
+    const projectLicense = 'MIT';
+    const report = generateComplianceReport(dependencies, projectLicense);
+
+    res.json(report);
+  } catch (err) {
     if (err.name === 'CastError') {
       return res.status(400).json({ error: 'Invalid scan ID format.' });
     }

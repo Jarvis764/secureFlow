@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
 import * as d3 from 'd3';
+import { getEcosystemColor } from './EcosystemBadge';
 
 // ─── Severity colour palette ───────────────────────────────────────────────────
 const SEVERITY_COLORS = {
@@ -8,16 +9,6 @@ const SEVERITY_COLORS = {
   medium:   '#ffb84d',
   high:     '#ff3b5c',
   critical: '#ff1744',
-};
-
-// Ecosystem border/ring colours
-const ECOSYSTEM_RING_COLORS = {
-  npm:        '#CB3837',
-  PyPI:       '#3776AB',
-  Maven:      '#C71A36',
-  Go:         '#00ADD8',
-  'crates.io':'#DEA584',
-  RubyGems:   '#CC342D',
 };
 
 // Risk heatmap colours for non-vulnerable nodes
@@ -62,7 +53,10 @@ function getNodeRadius(node) {
 
 function getEcosystemRingColor(node) {
   if (!node || !node.ecosystem || node.ecosystem === 'npm') return null;
-  return ECOSYSTEM_RING_COLORS[node.ecosystem] || null;
+  // Use imported getEcosystemColor from EcosystemBadge for consistency
+  const color = getEcosystemColor(node.ecosystem);
+  // Only return a color if it's a known non-default ecosystem
+  return color !== '#94a3b8' ? color : null;
 }
 
 function linkId(source, target) {
@@ -952,7 +946,7 @@ const DependencyGraph = memo(function DependencyGraph({
             <div style={{ color: '#94a3b8', marginBottom: '0.15rem' }}>v{tooltip.node.version}</div>
           )}
           {tooltip.node.ecosystem && (
-            <div style={{ color: ECOSYSTEM_RING_COLORS[tooltip.node.ecosystem] || '#94a3b8', marginBottom: '0.15rem', fontWeight: 600 }}>
+            <div style={{ color: getEcosystemColor(tooltip.node.ecosystem), marginBottom: '0.15rem', fontWeight: 600 }}>
               {tooltip.node.ecosystem}
             </div>
           )}

@@ -147,10 +147,11 @@ function parseBuildGradle(content) {
   if (deps.length === 0) {
     const depRe =
       /\b([A-Za-z_][A-Za-z0-9_]*)(?:\s+["']|["']\s*,?\s*["']|\s*\(\s*["'])([A-Za-z0-9._-]+):([A-Za-z0-9._-]+):([A-Za-z0-9._+\-]+)["']/g;
+    const SKIP_KEYWORDS = new Set(['import', 'apply', 'plugins', 'id', 'version', 'classpath']);
     let dm;
     while ((dm = depRe.exec(content)) !== null) {
       const config = dm[1];
-      if (['import', 'apply', 'plugins', 'id', 'version'].includes(config)) continue;
+      if (SKIP_KEYWORDS.has(config) || config.startsWith('//')) continue;
       const group = dm[2];
       const artifact = dm[3];
       const version = dm[4];

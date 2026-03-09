@@ -66,12 +66,13 @@ function parseGemfileLock(content) {
     const entryMatch = line.match(/^\s+([A-Za-z0-9_\-\.]+)\s+\(([^)]+)\)/);
     if (!entryMatch) continue;
 
-    const name = entryMatch[1].toLowerCase();
+    const name = entryMatch[1]; // preserve original gem casing (Ruby gem names are case-sensitive)
     const versionRaw = entryMatch[2].trim();
 
     if (leadingSpaces === 4) {
       // Top-level gem entry — extract exact version (no specifier operators)
       // Format: "name (version)" where version is a plain version number
+      // Note: gem names are case-sensitive, preserve original casing
       const version = versionRaw.replace(/^[=<>~!]+\s*/, '') || 'unknown';
       currentParent = name;
 

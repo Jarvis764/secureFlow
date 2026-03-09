@@ -149,7 +149,7 @@ function parsePoetryLock(content) {
     const isDev =
       category === 'dev' ||
       category === 'development' ||
-      (groups.length > 0 && groups.every((g) => g !== 'main'));
+      (groups.length > 0 && !groups.includes('main'));
 
     const key = `${name}@${version}`;
     if (seen.has(key)) continue;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getScans } from '../services/api';
+import { getScans, deleteScan } from '../services/api';
 import { formatDate } from '../utils/formatters';
 
 const PAGE_STYLE = {
@@ -13,9 +13,9 @@ const PAGE_STYLE = {
 };
 
 const SORT_OPTIONS = [
-  { value: 'newest',     label: 'Newest First' },
-  { value: 'risk-high',  label: 'Risk: High → Low' },
-  { value: 'risk-low',   label: 'Risk: Low → High' },
+  { value: 'newest', label: 'Newest First' },
+  { value: 'risk-high', label: 'Risk: High → Low' },
+  { value: 'risk-low', label: 'Risk: Low → High' },
 ];
 
 const PAGE_LIMIT = 10;
@@ -24,30 +24,30 @@ function relativeDate(dateStr) {
   if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
   const secs = Math.floor(diff / 1000);
-  if (secs < 60)        return 'Just now';
+  if (secs < 60) return 'Just now';
   const mins = Math.floor(secs / 60);
-  if (mins < 60)        return `${mins} minute${mins !== 1 ? 's' : ''} ago`;
+  if (mins < 60) return `${mins} minute${mins !== 1 ? 's' : ''} ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24)       return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
   const days = Math.floor(hours / 24);
-  if (days === 1)       return 'Yesterday';
-  if (days < 7)         return `${days} days ago`;
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
   return formatDate(dateStr);
 }
 
 function riskColor(score) {
-  if (score >= 75) return { bg: 'rgba(239,68,68,0.15)',    color: 'var(--severity-critical)', border: 'var(--severity-critical)' };
-  if (score >= 50) return { bg: 'rgba(249,115,22,0.15)',   color: 'var(--severity-high)',     border: 'var(--severity-high)'     };
-  if (score >= 25) return { bg: 'rgba(234,179,8,0.15)',    color: 'var(--severity-medium)',   border: 'var(--severity-medium)'   };
-  return             { bg: 'rgba(34,197,94,0.15)',          color: 'var(--severity-low)',      border: 'var(--severity-low)'      };
+  if (score >= 75) return { bg: 'rgba(239,68,68,0.15)', color: 'var(--severity-critical)', border: 'var(--severity-critical)' };
+  if (score >= 50) return { bg: 'rgba(249,115,22,0.15)', color: 'var(--severity-high)', border: 'var(--severity-high)' };
+  if (score >= 25) return { bg: 'rgba(234,179,8,0.15)', color: 'var(--severity-medium)', border: 'var(--severity-medium)' };
+  return { bg: 'rgba(34,197,94,0.15)', color: 'var(--severity-low)', border: 'var(--severity-low)' };
 }
 
 function VulnBadges({ vc = {} }) {
   const items = [
     { key: 'critical', label: 'C', cls: 'badge-critical' },
-    { key: 'high',     label: 'H', cls: 'badge-high'     },
-    { key: 'medium',   label: 'M', cls: 'badge-medium'   },
-    { key: 'low',      label: 'L', cls: 'badge-low'      },
+    { key: 'high', label: 'H', cls: 'badge-high' },
+    { key: 'medium', label: 'M', cls: 'badge-medium' },
+    { key: 'low', label: 'L', cls: 'badge-low' },
   ];
   return (
     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -73,12 +73,13 @@ const rowVariants = {
 export default function HistoryPage() {
   const navigate = useNavigate();
 
-  const [scans,      setScans]      = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState('');
-  const [page,       setPage]       = useState(1);
+  const [scans, setScans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [sort,       setSort]       = useState('newest');
+  const [sort, setSort] = useState('newest');
+  const [deleting, setDeleting] = useState(null); // scanId being deleted
 
   const load = useCallback(async (pageNum, sortKey) => {
     setLoading(true);
@@ -112,6 +113,21 @@ export default function HistoryPage() {
     setPage(1);
   }
 
+  async function handleDelete(e, scanId, projectName) {
+    e.stopPropagation();
+    if (!window.confirm(`Delete scan "${projectName}"? This cannot be undone.`)) return;
+    setDeleting(scanId);
+    try {
+      await deleteScan(scanId);
+      // Refresh the list
+      load(page, sort);
+    } catch {
+      setError('Failed to delete scan.');
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
     <div style={PAGE_STYLE}>
       {/* Header */}
@@ -135,14 +151,14 @@ export default function HistoryPage() {
           value={sort}
           onChange={handleSortChange}
           style={{
-            background:   'var(--bg-card)',
-            border:       '1px solid var(--border-color)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
             borderRadius: '8px',
-            color:        'var(--text-primary)',
-            padding:      '0.45rem 0.9rem',
-            fontSize:     '0.85rem',
-            cursor:       'pointer',
-            outline:      'none',
+            color: 'var(--text-primary)',
+            padding: '0.45rem 0.9rem',
+            fontSize: '0.85rem',
+            cursor: 'pointer',
+            outline: 'none',
           }}
         >
           {SORT_OPTIONS.map((o) => (
@@ -195,14 +211,14 @@ export default function HistoryPage() {
                   <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                     {['Project', 'Risk Score', 'Vulnerabilities', 'Date', 'Actions'].map((h) => (
                       <th key={h} style={{
-                        padding:       '0.85rem 1.25rem',
-                        textAlign:     'left',
-                        fontSize:      '0.75rem',
-                        fontWeight:    600,
-                        color:         'var(--text-secondary)',
+                        padding: '0.85rem 1.25rem',
+                        textAlign: 'left',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: 'var(--text-secondary)',
                         textTransform: 'uppercase',
                         letterSpacing: '0.07em',
-                        whiteSpace:    'nowrap',
+                        whiteSpace: 'nowrap',
                       }}>
                         {h}
                       </th>
@@ -222,9 +238,9 @@ export default function HistoryPage() {
                           initial="hidden"
                           animate="show"
                           style={{
-                            borderBottom:    '1px solid var(--border-color)',
-                            cursor:          'pointer',
-                            transition:      'background 0.18s ease',
+                            borderBottom: '1px solid var(--border-color)',
+                            cursor: 'pointer',
+                            transition: 'background 0.18s ease',
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,240,255,0.04)'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
@@ -239,15 +255,15 @@ export default function HistoryPage() {
                           {/* Risk score badge */}
                           <td data-label="Risk Score" style={{ padding: '0.85rem 1.25rem' }}>
                             <span style={{
-                              display:      'inline-block',
-                              padding:      '0.2rem 0.65rem',
-                              background:   risk.bg,
-                              color:        risk.color,
-                              border:       `1px solid ${risk.border}`,
+                              display: 'inline-block',
+                              padding: '0.2rem 0.65rem',
+                              background: risk.bg,
+                              color: risk.color,
+                              border: `1px solid ${risk.border}`,
                               borderRadius: '6px',
-                              fontWeight:   700,
-                              fontFamily:   'var(--font-mono)',
-                              fontSize:     '0.82rem',
+                              fontWeight: 700,
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '0.82rem',
                             }}>
                               {scan.riskScore ?? 0}
                             </span>
@@ -265,15 +281,37 @@ export default function HistoryPage() {
 
                           {/* Actions */}
                           <td data-label="Actions" style={{ padding: '0.85rem 1.25rem' }}>
-                            <motion.button
-                              className="btn-primary"
-                              onClick={(e) => { e.stopPropagation(); navigate(`/scan/${scan._id}`); }}
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                              style={{ fontSize: '0.78rem', padding: '0.3rem 0.85rem' }}
-                            >
-                              View →
-                            </motion.button>
+                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <motion.button
+                                className="btn-primary"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/scan/${scan._id}`); }}
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                style={{ fontSize: '0.78rem', padding: '0.3rem 0.85rem' }}
+                              >
+                                View →
+                              </motion.button>
+                              <motion.button
+                                onClick={(e) => handleDelete(e, scan._id, scan.projectName ?? 'Unknown')}
+                                disabled={deleting === scan._id}
+                                whileHover={{ scale: deleting === scan._id ? 1 : 1.1 }}
+                                whileTap={{ scale: deleting === scan._id ? 1 : 0.9 }}
+                                title="Delete scan"
+                                style={{
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  borderRadius: '6px',
+                                  color: '#ef4444',
+                                  padding: '0.3rem 0.6rem',
+                                  cursor: deleting === scan._id ? 'wait' : 'pointer',
+                                  fontSize: '0.78rem',
+                                  opacity: deleting === scan._id ? 0.5 : 1,
+                                  transition: 'all 0.2s',
+                                }}
+                              >
+                                {deleting === scan._id ? '⏳' : '🗑️'}
+                              </motion.button>
+                            </div>
                           </td>
                         </motion.tr>
                       );
@@ -287,11 +325,11 @@ export default function HistoryPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div style={{
-              display:        'flex',
+              display: 'flex',
               justifyContent: 'center',
-              alignItems:     'center',
-              gap:            '1rem',
-              marginTop:      '1.5rem',
+              alignItems: 'center',
+              gap: '1rem',
+              marginTop: '1.5rem',
             }}>
               <motion.button
                 className="btn-secondary"

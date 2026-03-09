@@ -596,4 +596,31 @@ router.get('/:id/licenses', readLimiter, async (req, res, next) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// DELETE /:id — remove a scan and its dependencies
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes a scan and all associated dependency records.
+ */
+router.delete('/:id', readLimiter, async (req, res, next) => {
+  try {
+    const scan = await Scan.findById(req.params.id);
+    if (!scan) {
+      return res.status(404).json({ error: 'Scan not found.' });
+    }
+
+    await Dependency.deleteMany({ scanId: scan._id });
+    await Scan.findByIdAndDelete(scan._id);
+
+    console.log(`[scanRoutes] Deleted scan ${scan._id} and its dependencies.`);
+    res.json({ message: 'Scan deleted successfully.', scanId: scan._id });
+  } catch (err) {
+    if (err.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid scan ID format.' });
+    }
+    next(err);
+  }
+});
+
 export default router;

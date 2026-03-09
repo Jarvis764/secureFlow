@@ -44,6 +44,14 @@ export async function getScanById(id) {
   return api.get(`/scans/${id}`);
 }
 
+/**
+ * Delete a scan and its dependencies.
+ * @param {string} id
+ */
+export async function deleteScan(id) {
+  return api.delete(`/scans/${id}`);
+}
+
 // Backward-compatible aliases
 export async function startScan(data) {
   return api.post('/scans', data);

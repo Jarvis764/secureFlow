@@ -9,6 +9,7 @@ import RiskGauge from '../components/RiskGauge';
 import SeverityDonut from '../components/SeverityDonut';
 import DependencyGraph from '../components/DependencyGraph';
 import VulnDetailPanel from '../components/VulnDetailPanel';
+import CvssLegend from '../components/CvssLegend';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import SbomPreviewPanel from '../components/SbomPreviewPanel';
 import LicenseCompliancePanel from '../components/LicenseCompliancePanel';
@@ -618,6 +619,9 @@ export default function ScanResultPage() {
                 onClose={() => setSelectedNode(null)}
               />
             </div>
+
+            {/* ── CVSS Score Legend ────────────────────────────────── */}
+            <CvssLegend />
           </div>
         </motion.div>
 

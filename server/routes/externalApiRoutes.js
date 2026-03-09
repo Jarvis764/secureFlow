@@ -52,8 +52,8 @@ const ipLimiter = rateLimit({
 
 /** Requests per hour for each tier. */
 const TIER_LIMITS = {
-  free:       60,
-  pro:        600,
+  free: 60,
+  pro: 600,
   enterprise: 6000,
 };
 
@@ -86,6 +86,7 @@ const apiRateLimiter = rateLimit({
   keyGenerator: (req) => req.apiKey?._id?.toString() ?? req.ip,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   message: { error: 'Rate limit exceeded. Please reduce your request frequency or upgrade your plan.' },
   skip: (req) => !req.apiKey,  // apiKeyAuth runs first; skip if somehow absent
 });
@@ -187,10 +188,10 @@ router.post('/scan', ipLimiter, apiKeyAuth, apiRateLimiter, async (req, res, nex
     const serverUrl = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`;
 
     res.status(201).json({
-      scanId:    scan._id.toString(),
+      scanId: scan._id.toString(),
       riskScore: overallRisk,
       summary,
-      scanUrl:   `${serverUrl}/scans/${scan._id}`,
+      scanUrl: `${serverUrl}/scans/${scan._id}`,
     });
   } catch (err) {
     next(err);

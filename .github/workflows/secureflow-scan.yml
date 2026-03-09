@@ -1,0 +1,16 @@
+name: SecureFlow CI Scan
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  secureflow-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Run SecureFlow vulnerability scanner
+        uses: ./.github/actions/secureflow-scan

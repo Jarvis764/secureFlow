@@ -102,39 +102,53 @@ function transformVuln(vuln) {
 
 /**
  * Looks up cached vulnerability results from MongoDB.
- * Returns a map of `name@version` → cached vulnerabilities array (or undefined if not cached).
- * @param {Array<{name: string, version: string}>} packages
+ * Returns a map of `name@version@ecosystem` → cached vulnerabilities array (or undefined if not cached).
+ * @param {Array<{name: string, version: string, ecosystem?: string}>} packages
  * @returns {Promise<Map<string, Array>>}
  */
 async function loadFromCache(packages) {
   const cacheMap = new Map();
   const cutoff = new Date(Date.now() - CACHE_TTL_MS);
 
-  const keys = packages.map((p) => ({ packageName: p.name, packageVersion: p.version }));
+  const keys = packages.map((p) => ({
+    packageName: p.name,
+    packageVersion: p.version,
+    ecosystem: p.ecosystem || 'npm',
+  }));
   const cached = await VulnCache.find({
-    $or: keys.map((k) => ({ packageName: k.packageName, packageVersion: k.packageVersion })),
+    $or: keys.map((k) => ({
+      packageName: k.packageName,
+      packageVersion: k.packageVersion,
+      ecosystem: k.ecosystem,
+    })),
     cachedAt: { $gte: cutoff },
   }).lean();
 
   for (const entry of cached) {
-    cacheMap.set(`${entry.packageName}@${entry.packageVersion}`, entry.vulnerabilities || []);
+    const eco = entry.ecosystem || 'npm';
+    cacheMap.set(`${entry.packageName}@${entry.packageVersion}@${eco}`, entry.vulnerabilities || []);
   }
   return cacheMap;
 }
 
 /**
  * Saves vulnerability results to MongoDB cache.
- * @param {Array<{name: string, version: string}>} packages
+ * @param {Array<{name: string, version: string, ecosystem?: string}>} packages
  * @param {Array<Array>} vulnsPerPackage - Parallel array of vulnerability arrays.
  */
 async function saveToCache(packages, vulnsPerPackage) {
   const ops = packages.map((pkg, i) => ({
     updateOne: {
-      filter: { packageName: pkg.name, packageVersion: pkg.version },
+      filter: {
+        packageName: pkg.name,
+        packageVersion: pkg.version,
+        ecosystem: pkg.ecosystem || 'npm',
+      },
       update: {
         $set: {
           vulnerabilities: vulnsPerPackage[i],
           cachedAt: new Date(),
+          ecosystem: pkg.ecosystem || 'npm',
         },
       },
       upsert: true,
@@ -148,12 +162,13 @@ async function saveToCache(packages, vulnsPerPackage) {
 
 /**
  * Queries the OSV batch API for a list of packages.
- * @param {Array<{name: string, version: string}>} packages
+ * Uses the correct ecosystem per dependency.
+ * @param {Array<{name: string, version: string, ecosystem?: string}>} packages
  * @returns {Promise<Array<Array>>} Parallel array of vulnerability arrays per package.
  */
 async function queryOSV(packages) {
   const queries = packages.map((pkg) => ({
-    package: { name: pkg.name, ecosystem: 'npm' },
+    package: { name: pkg.name, ecosystem: pkg.ecosystem || 'npm' },
     version: pkg.version,
   }));
 
@@ -183,10 +198,10 @@ async function queryOSV(packages) {
 export async function scanVulnerabilities(dependencies) {
   if (!dependencies || dependencies.length === 0) return [];
 
-  // Deduplicate by name@version
+  // Deduplicate by name@version@ecosystem
   const uniqueMap = new Map();
   for (const dep of dependencies) {
-    const key = `${dep.name}@${dep.version}`;
+    const key = `${dep.name}@${dep.version}@${dep.ecosystem || 'npm'}`;
     if (!uniqueMap.has(key)) uniqueMap.set(key, dep);
   }
   const uniqueDeps = Array.from(uniqueMap.values());
@@ -206,7 +221,7 @@ export async function scanVulnerabilities(dependencies) {
   const uncached = [];
 
   for (const dep of uniqueDeps) {
-    const key = `${dep.name}@${dep.version}`;
+    const key = `${dep.name}@${dep.version}@${dep.ecosystem || 'npm'}`;
     if (cacheMap.has(key)) {
       cached.push({ dep, vulns: cacheMap.get(key) });
     } else {
@@ -225,14 +240,14 @@ export async function scanVulnerabilities(dependencies) {
       try {
         const batchVulns = await queryOSV(batch);
         for (let j = 0; j < batch.length; j++) {
-          const key = `${batch[j].name}@${batch[j].version}`;
+          const key = `${batch[j].name}@${batch[j].version}@${batch[j].ecosystem || 'npm'}`;
           osvResults.set(key, batchVulns[j] || []);
         }
       } catch (err) {
         console.error(`[vulnScanner] OSV query failed for batch starting at ${i}:`, err.message);
         // Mark batch packages as having no vulnerabilities
         for (const dep of batch) {
-          osvResults.set(`${dep.name}@${dep.version}`, []);
+          osvResults.set(`${dep.name}@${dep.version}@${dep.ecosystem || 'npm'}`, []);
         }
       }
     }
@@ -250,7 +265,7 @@ export async function scanVulnerabilities(dependencies) {
   // --- Build result: attach vulnerabilities to every original dependency ---
   const vulnsByKey = new Map();
   for (const { dep, vulns } of cached) {
-    vulnsByKey.set(`${dep.name}@${dep.version}`, vulns);
+    vulnsByKey.set(`${dep.name}@${dep.version}@${dep.ecosystem || 'npm'}`, vulns);
   }
   for (const [key, vulns] of osvResults) {
     vulnsByKey.set(key, vulns);
@@ -258,6 +273,6 @@ export async function scanVulnerabilities(dependencies) {
 
   return dependencies.map((dep) => ({
     ...dep,
-    vulnerabilities: vulnsByKey.get(`${dep.name}@${dep.version}`) || [],
+    vulnerabilities: vulnsByKey.get(`${dep.name}@${dep.version}@${dep.ecosystem || 'npm'}`) || [],
   }));
 }

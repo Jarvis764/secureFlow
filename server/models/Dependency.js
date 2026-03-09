@@ -21,6 +21,7 @@ const dependencySchema = new mongoose.Schema({
   modulePath: { type: String, default: '' },
   license: { type: String, default: '' },
   licenseCategory: { type: String, enum: ['permissive', 'copyleft', 'unknown', ''], default: '' },
+  ecosystem: { type: String, default: 'npm' },
 });
 
 export default mongoose.model('Dependency', dependencySchema);

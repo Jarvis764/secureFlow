@@ -14,13 +14,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 
-import { parseLockfile } from '../services/dependencyParser.js';
+import { parseLockfile, parseUniversalFile } from '../services/dependencyParser.js';
 import { scanVulnerabilities } from '../services/vulnScanner.js';
 import { calculateDependencyRisk, calculateOverallRisk } from '../services/riskScorer.js';
 import { fetchFromGitHub } from '../services/githubFetcher.js';
 import { buildGraphData } from '../services/graphBuilder.js';
 import { generateSPDX, generateCycloneDX } from '../services/sbomGenerator.js';
 import { analyzeLicenses, generateComplianceReport } from '../services/licenseAnalyzer.js';
+import { detectEcosystem } from '../services/parsers/index.js';
 import Scan from '../models/Scan.js';
 import Dependency from '../models/Dependency.js';
 
@@ -69,17 +70,21 @@ const upload = multer({
  * @param {string} lockfileStr   - Raw package-lock.json content.
  * @param {'upload'|'github'} source
  * @param {string|null} repoUrl  - Only set for 'github' scans.
+ * @param {string} [ecosystem]   - Ecosystem identifier (default: 'npm').
  * @returns {Promise<{ scanId: string, riskScore: number, summary: Object }>}
  */
-async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) {
+async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null, ecosystem = 'npm') {
   // 1. Parse lockfile
   const { projectName, directCount, transitiveCount, dependencies } = await parseLockfile(
     packageJsonStr,
     lockfileStr
   );
 
+  // Tag all dependencies with the ecosystem
+  const taggedDeps = dependencies.map((d) => ({ ...d, ecosystem }));
+
   // 2. Scan vulnerabilities
-  const scannedDeps = await scanVulnerabilities(dependencies);
+  const scannedDeps = await scanVulnerabilities(taggedDeps);
 
   // 3. Per-dependency risk scores
   const scoredDeps = scannedDeps.map((dep) => ({
@@ -118,6 +123,7 @@ async function runPipeline(packageJsonStr, lockfileStr, source, repoUrl = null) 
       riskScore: dep.riskScore || 0,
       license: dep.license || '',
       licenseCategory: dep.licenseCategory || '',
+      ecosystem: dep.ecosystem || ecosystem,
     }));
     await Dependency.insertMany(depDocs);
   }
@@ -244,6 +250,7 @@ async function runMultiModulePipeline(modules, source, repoUrl, projectName) {
       modulePath: dep.modulePath || '',
       license: dep.license || '',
       licenseCategory: dep.licenseCategory || '',
+      ecosystem: dep.ecosystem || 'npm',
     }));
     await Dependency.insertMany(depDocs);
   }
@@ -254,6 +261,120 @@ async function runMultiModulePipeline(modules, source, repoUrl, projectName) {
 
   return { scanId: scan._id.toString(), riskScore: overallRisk, summary, moduleCount: modules.length };
 }
+
+// ---------------------------------------------------------------------------
+// POST /upload/universal — Universal multi-ecosystem file upload
+// ---------------------------------------------------------------------------
+
+/**
+ * Upload any supported ecosystem manifest/lockfile and run a scan.
+ *
+ * Form fields:
+ *   manifestFile — required primary file (e.g. requirements.txt, go.mod, Cargo.lock)
+ *   metaFile     — optional secondary file (e.g. package.json for npm, go.mod alongside go.sum)
+ *
+ * Supported ecosystems: PyPI, Maven, Go, crates.io, RubyGems
+ * (npm files are handled by the existing /upload endpoint)
+ */
+router.post(
+  '/upload/universal',
+  scanLimiter,
+  upload.fields([
+    { name: 'manifestFile', maxCount: 1 },
+    { name: 'metaFile', maxCount: 1 },
+  ]),
+  async (req, res, next) => {
+    try {
+      const files = req.files || {};
+
+      if (!files.manifestFile || !files.manifestFile[0]) {
+        return res.status(400).json({ error: '"manifestFile" is required.' });
+      }
+
+      const manifestFile = files.manifestFile[0];
+      const metaFile = files.metaFile ? files.metaFile[0] : null;
+
+      const manifestContent = manifestFile.buffer.toString('utf8');
+      const metaContent = metaFile ? metaFile.buffer.toString('utf8') : undefined;
+      const filename = manifestFile.originalname;
+
+      // Detect ecosystem
+      const detected = detectEcosystem(filename);
+      if (!detected) {
+        return res.status(400).json({
+          error: `Unsupported file type: "${filename}". Supported files: requirements.txt, Pipfile.lock, poetry.lock, pom.xml, build.gradle, build.gradle.kts, go.mod, go.sum, Cargo.lock, Gemfile.lock`,
+        });
+      }
+
+      if (detected.ecosystem === 'npm') {
+        return res.status(400).json({
+          error: 'For npm projects, use the standard /upload endpoint with package.json and package-lock.json.',
+        });
+      }
+
+      // Parse the file(s)
+      const { projectName, directCount, transitiveCount, dependencies, ecosystem } =
+        await parseUniversalFile(filename, manifestContent, metaContent);
+
+      // Run vulnerability scan
+      const scannedDeps = await scanVulnerabilities(dependencies);
+
+      // Per-dependency risk scores
+      const scoredDeps = scannedDeps.map((dep) => ({
+        ...dep,
+        riskScore: calculateDependencyRisk(dep),
+      }));
+
+      // License analysis
+      const licensedDeps = await analyzeLicenses(scoredDeps);
+
+      // Overall project risk
+      const { overallRisk, summary } = calculateOverallRisk(licensedDeps);
+
+      // Persist to MongoDB
+      const scan = await Scan.create({
+        projectName,
+        source: 'upload',
+        totalDependencies: dependencies.length,
+        directDependencies: directCount,
+        transitiveDependencies: transitiveCount,
+        vulnerabilityCount: summary,
+        riskScore: overallRisk,
+        status: 'complete',
+      });
+
+      if (licensedDeps.length > 0) {
+        const depDocs = licensedDeps.map((dep) => ({
+          scanId: scan._id,
+          name: dep.name,
+          version: dep.version,
+          depth: dep.depth,
+          isDevDependency: dep.isDevDependency || false,
+          parent: dep.parent || undefined,
+          vulnerabilities: dep.vulnerabilities || [],
+          riskScore: dep.riskScore || 0,
+          license: dep.license || '',
+          licenseCategory: dep.licenseCategory || '',
+          ecosystem: dep.ecosystem || ecosystem,
+        }));
+        await Dependency.insertMany(depDocs);
+      }
+
+      console.log(
+        `[scanRoutes] Universal scan complete: scanId=${scan._id}, ecosystem=${ecosystem}, riskScore=${overallRisk}, total=${dependencies.length}`
+      );
+
+      res.status(201).json({
+        scanId: scan._id.toString(),
+        riskScore: overallRisk,
+        summary,
+        ecosystem,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ---------------------------------------------------------------------------
 // POST /upload

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback, memo } from 'react';
 import * as d3 from 'd3';
+import { getEcosystemColor } from './EcosystemBadge';
 
 // ─── Severity colour palette ───────────────────────────────────────────────────
 const SEVERITY_COLORS = {
@@ -48,6 +49,14 @@ function getNodeRadius(node) {
   if (node.id === 'root')     return 18;
   if (node.isModuleGroup)     return 14;
   return Math.max(6, Math.min(20, 4 + (node.dependentCount || 0) * 1.5));
+}
+
+function getEcosystemRingColor(node) {
+  if (!node || !node.ecosystem || node.ecosystem === 'npm') return null;
+  // Use imported getEcosystemColor from EcosystemBadge for consistency
+  const color = getEcosystemColor(node.ecosystem);
+  // Only return a color if it's a known non-default ecosystem
+  return color !== '#94a3b8' ? color : null;
 }
 
 function linkId(source, target) {
@@ -416,6 +425,18 @@ const DependencyGraph = memo(function DependencyGraph({
       ctx.lineWidth   = 1.5;
       ctx.stroke();
 
+      // Ecosystem ring (outer ring for non-npm ecosystems)
+      const ecoRingColor = getEcosystemRingColor(n);
+      if (ecoRingColor) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 3, 0, 2 * Math.PI);
+        ctx.strokeStyle = ecoRingColor;
+        ctx.lineWidth   = 1.5;
+        ctx.globalAlpha = op * 0.6;
+        ctx.stroke();
+        ctx.globalAlpha = op;
+      }
+
       // Label
       if (tr.k > 0.8) {
         const lbl = (n.name || n.id);
@@ -661,6 +682,17 @@ const DependencyGraph = memo(function DependencyGraph({
         .attr('stroke',        d => getNodeColor(d))
         .attr('stroke-width',  d => 1 + (d.riskScore ?? 0) / 60)
         .attr('stroke-opacity', 0.85);
+
+      // Ecosystem ring (outer ring for non-npm ecosystems)
+      nodeSel.filter(d => getEcosystemRingColor(d) !== null)
+        .append('circle')
+        .attr('class', 'dep-eco-ring')
+        .attr('r',             d => getNodeRadius(d) + 3)
+        .attr('fill',          'none')
+        .attr('stroke',        d => getEcosystemRingColor(d))
+        .attr('stroke-width',  1.5)
+        .attr('stroke-opacity', 0.6)
+        .attr('pointer-events', 'none');
 
       // +/- expand indicator
       nodeSel.filter(d => liveRef.current.hiddenCount.has(d.id) || expandedIds.has(d.id))
@@ -912,6 +944,11 @@ const DependencyGraph = memo(function DependencyGraph({
           </div>
           {tooltip.node.version && (
             <div style={{ color: '#94a3b8', marginBottom: '0.15rem' }}>v{tooltip.node.version}</div>
+          )}
+          {tooltip.node.ecosystem && (
+            <div style={{ color: getEcosystemColor(tooltip.node.ecosystem), marginBottom: '0.15rem', fontWeight: 600 }}>
+              {tooltip.node.ecosystem}
+            </div>
           )}
           {tooltip.node.modulePath && (
             <div style={{ color: '#94a3b8', marginBottom: '0.15rem' }}>

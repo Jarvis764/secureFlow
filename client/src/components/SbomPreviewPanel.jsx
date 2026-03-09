@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import EcosystemBadge from './EcosystemBadge';
 
 const LICENSE_FILTER_OPTIONS = ['All', 'Permissive', 'Copyleft', 'Unknown'];
+const ECOSYSTEM_FILTER_OPTIONS = ['All', 'npm', 'PyPI', 'Maven', 'Go', 'crates.io', 'RubyGems'];
 
 function categoryColor(category) {
   if (category === 'permissive') return 'var(--severity-low)';
@@ -9,12 +11,22 @@ function categoryColor(category) {
   return 'var(--text-secondary)';
 }
 
-function purl(name, version) {
+function purl(name, version, ecosystem) {
   if (!name || !version) return '';
-  const encodedName = name.startsWith('@')
-    ? `pkg:npm/%40${encodeURIComponent(name.slice(1))}@${encodeURIComponent(version)}`
-    : `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(version)}`;
-  return encodedName;
+  const eco = (ecosystem || 'npm').toLowerCase();
+  if (eco === 'npm' || !ecosystem) {
+    return name.startsWith('@')
+      ? `pkg:npm/%40${encodeURIComponent(name.slice(1))}@${encodeURIComponent(version)}`
+      : `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(version)}`;
+  }
+  const purlEco = {
+    pypi: 'pypi',
+    maven: 'maven',
+    go: 'golang',
+    'crates.io': 'cargo',
+    rubygems: 'gem',
+  }[eco] || eco;
+  return `pkg:${purlEco}/${encodeURIComponent(name)}@${encodeURIComponent(version)}`;
 }
 
 /**
@@ -27,6 +39,13 @@ function purl(name, version) {
 export default function SbomPreviewPanel({ dependencies = [], scan }) {
   const [search, setSearch] = useState('');
   const [licenseFilter, setLicenseFilter] = useState('All');
+  const [ecosystemFilter, setEcosystemFilter] = useState('All');
+
+  // Determine if any deps have non-npm ecosystem to show the ecosystem filter
+  const hasMultipleEcosystems = useMemo(
+    () => dependencies.some((d) => d.ecosystem && d.ecosystem !== 'npm'),
+    [dependencies]
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -35,9 +54,11 @@ export default function SbomPreviewPanel({ dependencies = [], scan }) {
       const matchesLicense =
         licenseFilter === 'All' ||
         (dep.licenseCategory || 'unknown').toLowerCase() === licenseFilter.toLowerCase();
-      return matchesSearch && matchesLicense;
+      const matchesEcosystem =
+        ecosystemFilter === 'All' || (dep.ecosystem || 'npm') === ecosystemFilter;
+      return matchesSearch && matchesLicense && matchesEcosystem;
     });
-  }, [dependencies, search, licenseFilter]);
+  }, [dependencies, search, licenseFilter, ecosystemFilter]);
 
   return (
     <motion.div
@@ -125,6 +146,26 @@ export default function SbomPreviewPanel({ dependencies = [], scan }) {
             </option>
           ))}
         </select>
+        {hasMultipleEcosystems && (
+          <select
+            value={ecosystemFilter}
+            onChange={(e) => setEcosystemFilter(e.target.value)}
+            style={{
+              background: 'rgba(17,24,39,0.7)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              padding: '0.4rem 0.75rem',
+              fontSize: '0.82rem',
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            {ECOSYSTEM_FILTER_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Table */}
@@ -154,7 +195,7 @@ export default function SbomPreviewPanel({ dependencies = [], scan }) {
                 zIndex: 1,
               }}
             >
-              {['Package Name', 'Version', 'License', 'Category', 'PURL'].map((h) => (
+              {['Package Name', 'Version', 'Ecosystem', 'License', 'Category', 'PURL'].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -178,7 +219,7 @@ export default function SbomPreviewPanel({ dependencies = [], scan }) {
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   style={{
                     padding: '1.5rem',
                     textAlign: 'center',
@@ -191,7 +232,7 @@ export default function SbomPreviewPanel({ dependencies = [], scan }) {
             ) : (
               filtered.map((dep, i) => {
                 const category = dep.licenseCategory || 'unknown';
-                const purlStr = purl(dep.name, dep.version);
+                const purlStr = purl(dep.name, dep.version, dep.ecosystem);
                 return (
                   <tr
                     key={dep._id || `${dep.name}@${dep.version}`}
@@ -220,6 +261,9 @@ export default function SbomPreviewPanel({ dependencies = [], scan }) {
                       }}
                     >
                       {dep.version}
+                    </td>
+                    <td style={{ padding: '0.45rem 0.75rem', whiteSpace: 'nowrap' }}>
+                      <EcosystemBadge ecosystem={dep.ecosystem || 'npm'} size="sm" />
                     </td>
                     <td
                       style={{

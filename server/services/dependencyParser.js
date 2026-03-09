@@ -1,6 +1,9 @@
 /**
  * @fileoverview Parses package.json and package-lock.json into a flat dependency array.
+ * Also exposes parseUniversalFile() for multi-ecosystem support.
  */
+
+import { parseEcosystemFile } from './parsers/index.js';
 
 /** Maximum recursion depth for transitive dependencies. */
 const MAX_DEPTH = 5;
@@ -157,4 +160,41 @@ export async function parseLockfile(packageJsonStr, lockfileStr) {
   );
 
   return { projectName, directCount, transitiveCount, dependencies };
+}
+
+/**
+ * Parses any supported ecosystem manifest or lockfile using the parser registry.
+ * Automatically detects the ecosystem from the filename.
+ *
+ * Supported file types:
+ *   npm: package-lock.json (requires metaContent=package.json)
+ *   PyPI: requirements.txt, Pipfile.lock, poetry.lock
+ *   Maven: pom.xml, build.gradle, build.gradle.kts
+ *   Go: go.mod, go.sum
+ *   Rust: Cargo.lock
+ *   Ruby: Gemfile.lock
+ *
+ * @param {string} filename     - Name of the primary file.
+ * @param {string} content      - Raw content of the primary file.
+ * @param {string} [metaContent] - Optional secondary file content (e.g. package.json for npm).
+ * @returns {Promise<{
+ *   projectName: string,
+ *   directCount: number,
+ *   transitiveCount: number,
+ *   dependencies: Array<{name, version, depth, isDevDependency, parent, ecosystem}>,
+ *   ecosystem: string
+ * }>}
+ */
+export async function parseUniversalFile(filename, content, metaContent) {
+  // Special-case npm: delegate to parseLockfile for backward compatibility
+  const lower = (filename || '').toLowerCase().split('/').pop().split('\\').pop();
+  if (lower === 'package-lock.json') {
+    if (!metaContent) {
+      throw new Error('package-lock.json requires a package.json (metaContent) to be provided.');
+    }
+    const result = await parseLockfile(metaContent, content);
+    return { ...result, ecosystem: 'npm' };
+  }
+
+  return parseEcosystemFile(filename, content, metaContent);
 }

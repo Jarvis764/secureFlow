@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import FileDropzone from '../components/FileDropzone';
+import UniversalDropzone from '../components/UniversalDropzone';
 import GitHubUrlInput from '../components/GitHubUrlInput';
 import ScanProgress from '../components/ScanProgress';
-import { uploadScan, scanGitHub } from '../services/api';
+import { uploadScan, scanGitHub, uploadUniversalScan } from '../services/api';
 
 const PAGE_STYLE = {
   minHeight: 'calc(100vh - 64px)',
@@ -48,6 +49,25 @@ export default function ScanPage() {
     const interval = startProgressAnimation();
     try {
       const res = await uploadScan(packageJsonFile, lockfileFile);
+      clearInterval(interval);
+      setProgressStep('complete');
+      await new Promise((r) => setTimeout(r, 500));
+      navigate(`/scan/${res.data.scanId}`);
+    } catch (err) {
+      clearInterval(interval);
+      setProgressStep('');
+      const msg = err?.response?.data?.error || 'Upload failed. Please try again.';
+      showToast(msg);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function handleUniversalUpload(manifestFile, metaFile) {
+    setScanning(true);
+    const interval = startProgressAnimation();
+    try {
+      const res = await uploadUniversalScan(manifestFile, metaFile);
       clearInterval(interval);
       setProgressStep('complete');
       await new Promise((r) => setTimeout(r, 500));
@@ -135,11 +155,30 @@ export default function ScanPage() {
             <h2 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
               📁 File Upload
             </h2>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              Drop your <code style={{ color: 'var(--accent-cyan)' }}>package.json</code> and <code style={{ color: 'var(--accent-cyan)' }}>package-lock.json</code>.
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+              Upload npm files or any other supported ecosystem.
             </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
+              {['📦 npm', '🐍 PyPI', '☕ Maven', '🔵 Go', '🦀 crates.io', '💎 RubyGems'].map((eco) => (
+                <span key={eco} style={{
+                  fontSize: '0.72rem',
+                  padding: '0.1rem 0.5rem',
+                  borderRadius: '10px',
+                  background: 'rgba(0,212,255,0.06)',
+                  border: '1px solid rgba(0,212,255,0.15)',
+                  color: 'var(--text-secondary)',
+                  fontFamily: 'var(--font-mono)',
+                }}>{eco}</span>
+              ))}
+            </div>
           </div>
           <FileDropzone onUpload={handleFileUpload} isLoading={scanning} />
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+              Other ecosystems (PyPI, Maven, Go, Rust, Ruby):
+            </p>
+            <UniversalDropzone onUpload={handleUniversalUpload} isLoading={scanning} />
+          </div>
         </div>
 
         {/* Divider */}

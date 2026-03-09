@@ -78,4 +78,19 @@ export async function getScanLicenses(scanId) {
   return api.get(`/scans/${scanId}/licenses`);
 }
 
+/**
+ * Upload any supported ecosystem manifest/lockfile for a universal scan.
+ * Supports PyPI, Maven, Go, crates.io, RubyGems.
+ * @param {File} manifestFile - Primary file (e.g. requirements.txt, go.mod, Cargo.lock)
+ * @param {File} [metaFile]   - Optional secondary file
+ */
+export async function uploadUniversalScan(manifestFile, metaFile) {
+  const formData = new FormData();
+  formData.append('manifestFile', manifestFile);
+  if (metaFile) formData.append('metaFile', metaFile);
+  return api.post('/scans/upload/universal', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+}
+
 export default api;

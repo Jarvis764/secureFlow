@@ -12,6 +12,7 @@ import VulnDetailPanel from '../components/VulnDetailPanel';
 import LoadingSkeleton from '../components/LoadingSkeleton';
 import SbomPreviewPanel from '../components/SbomPreviewPanel';
 import LicenseCompliancePanel from '../components/LicenseCompliancePanel';
+import EcosystemBadge from '../components/EcosystemBadge';
 import { formatDate } from '../utils/formatters';
 
 const PAGE_STYLE = {
@@ -280,6 +281,17 @@ export default function ScanResultPage() {
     [dependencies],
   );
 
+  // Derive primary ecosystem from dependencies
+  const primaryEcosystem = useMemo(() => {
+    if (!dependencies || dependencies.length === 0) return null;
+    const ecosystems = dependencies.map((d) => d.ecosystem || 'npm');
+    const counts = ecosystems.reduce((acc, eco) => {
+      acc[eco] = (acc[eco] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'npm';
+  }, [dependencies]);
+
   // Filter graph nodes/links by active module
   const filteredNodes = useMemo(() => {
     if (activeModule === 'All') return nodes;
@@ -491,6 +503,7 @@ export default function ScanResultPage() {
                   { label: 'Scanned', value: formatDate(scan?.createdAt) },
                   { label: 'Status', value: <span style={{ color: 'var(--severity-low)', fontWeight: 600 }}>{(scan?.status ?? 'complete').toUpperCase()}</span> },
                   { label: 'Risk Score', value: <span style={{ color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{scan?.riskScore ?? 0}</span> },
+                  ...(primaryEcosystem ? [{ label: 'Ecosystem', value: <EcosystemBadge ecosystem={primaryEcosystem} size="md" /> }] : []),
                 ].map(({ label, value }) => (
                   <tr key={label} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '0.5rem 0', color: 'var(--text-secondary)', width: '38%' }}>{label}</td>

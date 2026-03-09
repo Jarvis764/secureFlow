@@ -124,6 +124,7 @@ export function buildGraphData(dependencies, modules) {
       riskScore: dep.riskScore || 0,
       modulePath: depModulePath,
       dependentCount: dependentCount.get(dep.name) || 0,
+      ecosystem: dep.ecosystem || 'npm',
     });
 
     // Create a link from parent → this dependency using the resolved name@version ID.

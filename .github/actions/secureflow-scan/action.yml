@@ -20,10 +20,10 @@ inputs:
     default: 'http://localhost:5000'
 
   api-key:
-    description: >
-      SecureFlow API key with scan permissions (X-API-Key).
-      Store this as a GitHub Actions secret, e.g. ${{ secrets.SECUREFLOW_API_KEY }}.
-    required: true
+  description: >
+    SecureFlow API key with scan permissions (X-API-Key).
+    Store this as a GitHub Actions secret.
+  required: true
 
   package-json-path:
     description: >

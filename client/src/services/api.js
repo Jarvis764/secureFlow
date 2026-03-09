@@ -57,4 +57,25 @@ export async function getScanDependencies(id) {
   return api.get(`/scans/${id}/dependencies`);
 }
 
+/**
+ * Download an SBOM file for a scan.
+ * @param {string} scanId
+ * @param {'spdx'|'cyclonedx-json'|'cyclonedx-xml'} format
+ */
+export async function downloadSBOM(scanId, format) {
+  const endpoint =
+    format === 'spdx'
+      ? `/scans/${scanId}/sbom/spdx`
+      : `/scans/${scanId}/sbom/cyclonedx${format === 'cyclonedx-xml' ? '?format=xml' : ''}`;
+  return api.get(endpoint, { responseType: 'blob' });
+}
+
+/**
+ * Get license compliance report for a scan.
+ * @param {string} scanId
+ */
+export async function getScanLicenses(scanId) {
+  return api.get(`/scans/${scanId}/licenses`);
+}
+
 export default api;

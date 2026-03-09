@@ -3,13 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { getScanById } from '../services/api';
+import { getScanById, downloadSBOM } from '../services/api';
 import MetricCard from '../components/MetricCard';
 import RiskGauge from '../components/RiskGauge';
 import SeverityDonut from '../components/SeverityDonut';
 import DependencyGraph from '../components/DependencyGraph';
 import VulnDetailPanel from '../components/VulnDetailPanel';
 import LoadingSkeleton from '../components/LoadingSkeleton';
+import SbomPreviewPanel from '../components/SbomPreviewPanel';
+import LicenseCompliancePanel from '../components/LicenseCompliancePanel';
 import { formatDate } from '../utils/formatters';
 
 const PAGE_STYLE = {
@@ -46,6 +48,7 @@ export default function ScanResultPage() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [graphWidth, setGraphWidth] = useState(900);
   const [exporting, setExporting] = useState(false);
+  const [sbomDownloading, setSbomDownloading] = useState(null); // 'spdx' | 'cyclonedx-json' | 'cyclonedx-xml' | null
   const [activeModule, setActiveModule] = useState('All');
 
   // ── Fetch scan ────────────────────────────────────────────────────────────
@@ -82,7 +85,7 @@ export default function ScanResultPage() {
   }, []);
 
   // ── Derived data ──────────────────────────────────────────────────────────
-  const { scan, dependencies, graphData } = data || {};
+  const { scan, dependencies, graphData, licenseReport } = data || {};
   const nodes = graphData?.nodes ?? [];
   const links = graphData?.links ?? [];
   const vc = scan?.vulnerabilityCount ?? {};
@@ -245,6 +248,30 @@ export default function ScanResultPage() {
     }
   }, [scan, exporting]);
 
+  // ── SBOM Download ─────────────────────────────────────────────────────────
+  const handleDownloadSBOM = useCallback(async (format) => {
+    if (!scan || sbomDownloading) return;
+    setSbomDownloading(format);
+    try {
+      const res = await downloadSBOM(id, format);
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      const projectSlug = (scan.projectName ?? 'sbom').replace(/\s+/g, '-');
+      if (format === 'spdx') a.download = `${projectSlug}.spdx.json`;
+      else if (format === 'cyclonedx-xml') a.download = `${projectSlug}.cdx.xml`;
+      else a.download = `${projectSlug}.cdx.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('SBOM download failed:', err);
+    } finally {
+      setSbomDownloading(null);
+    }
+  }, [scan, id, sbomDownloading]);
+
 
 
   // Module paths (Phase 6A multi-module support)
@@ -327,6 +354,36 @@ export default function ScanResultPage() {
                 style={{ fontSize: '0.85rem', opacity: exporting ? 0.65 : 1 }}
               >
                 {exporting ? '⏳ Generating…' : '📄 Export PDF'}
+              </motion.button>
+              <motion.button
+                className="btn-secondary"
+                onClick={() => handleDownloadSBOM('spdx')}
+                disabled={!!sbomDownloading}
+                whileHover={{ scale: sbomDownloading ? 1 : 1.05 }}
+                whileTap={{ scale: sbomDownloading ? 1 : 0.95 }}
+                style={{ fontSize: '0.85rem', opacity: sbomDownloading === 'spdx' ? 0.65 : 1 }}
+              >
+                {sbomDownloading === 'spdx' ? '⏳…' : '📋 SPDX'}
+              </motion.button>
+              <motion.button
+                className="btn-secondary"
+                onClick={() => handleDownloadSBOM('cyclonedx-json')}
+                disabled={!!sbomDownloading}
+                whileHover={{ scale: sbomDownloading ? 1 : 1.05 }}
+                whileTap={{ scale: sbomDownloading ? 1 : 0.95 }}
+                style={{ fontSize: '0.85rem', opacity: sbomDownloading === 'cyclonedx-json' ? 0.65 : 1 }}
+              >
+                {sbomDownloading === 'cyclonedx-json' ? '⏳…' : '📋 CycloneDX'}
+              </motion.button>
+              <motion.button
+                className="btn-secondary"
+                onClick={() => handleDownloadSBOM('cyclonedx-xml')}
+                disabled={!!sbomDownloading}
+                whileHover={{ scale: sbomDownloading ? 1 : 1.05 }}
+                whileTap={{ scale: sbomDownloading ? 1 : 0.95 }}
+                style={{ fontSize: '0.85rem', opacity: sbomDownloading === 'cyclonedx-xml' ? 0.65 : 1 }}
+              >
+                {sbomDownloading === 'cyclonedx-xml' ? '⏳…' : '📋 CDX XML'}
               </motion.button>
               <motion.button
                 className="btn-primary"
@@ -549,6 +606,22 @@ export default function ScanResultPage() {
               />
             </div>
           </div>
+        </motion.div>
+
+        {/* ── License Compliance ───────────────────────────────────────── */}
+        <motion.div variants={itemVariants}>
+          <LicenseCompliancePanel
+            licenseReport={licenseReport}
+            dependencies={dependencies ?? []}
+          />
+        </motion.div>
+
+        {/* ── SBOM Preview ─────────────────────────────────────────────── */}
+        <motion.div variants={itemVariants}>
+          <SbomPreviewPanel
+            dependencies={dependencies ?? []}
+            scan={scan}
+          />
         </motion.div>
 
       </motion.div>

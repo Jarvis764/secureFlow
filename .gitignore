@@ -2,6 +2,7 @@
 node_modules/
 .env
 dist/
+!/.github/actions/secureflow-scan/dist/
 build/
 .DS_Store
 *.log

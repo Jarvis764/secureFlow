@@ -12,5 +12,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install and start backend server
+        run: |
+          cd server
+          npm install
+          npm start &
+          sleep 10
+        env:
+          PORT: 5000
+          MONGODB_URI: ${{ secrets.MONGODB_URI || 'mongodb://localhost:27017/secureflow_test' }}
+
       - name: Run SecureFlow vulnerability scanner
         uses: ./.github/actions/secureflow-scan
+        with:
+          api-key: ${{ secrets.SECUREFLOW_API_KEY || 'test-key' }}

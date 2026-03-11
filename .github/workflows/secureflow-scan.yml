@@ -22,7 +22,7 @@ jobs:
           cd server
           npm install
           nohup npm start > server.log 2>&1 &
-          npx wait-on http://localhost:5000/api/v1/health || sleep 10
+          npx wait-on http-get://localhost:5000 || sleep 10
         env:
           PORT: 5000
           MONGODB_URI: ${{ secrets.MONGODB_URI || 'mongodb://localhost:27017/secureflow_test' }}
